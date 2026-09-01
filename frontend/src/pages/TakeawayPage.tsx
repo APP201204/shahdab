@@ -279,13 +279,13 @@ export function TakeawayPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <h1 className="text-2xl font-bold">Takeaway Orders</h1>
 
       {message && (
         <div
           className={cn(
-            "rounded-md p-3 text-sm",
+            "rounded-md p-2 text-sm",
             message.type === "error"
               ? "bg-destructive/10 text-destructive"
               : "bg-green-100 text-green-800"
@@ -295,9 +295,9 @@ export function TakeawayPage() {
         </div>
       )}
 
-      <div className="rounded-md border p-4">
-        <h2 className="mb-3 font-semibold">New Takeaway Order</h2>
-        <div className="mb-3 grid gap-3 sm:grid-cols-2">
+      <div className="rounded-md border p-3">
+        <h2 className="mb-2 font-semibold">New Takeaway Order</h2>
+        <div className="mb-2 grid gap-2 sm:grid-cols-3">
           <input
             className={inputClass}
             placeholder="Customer name"
@@ -323,7 +323,7 @@ export function TakeawayPage() {
           </select>
         </div>
 
-        <div className={cn("mb-3", tabList)} role="tablist" aria-label="Menu categories">
+        <div className={cn("mb-2", tabList)} role="tablist" aria-label="Menu categories">
           <button
             role="tab"
             aria-selected={activeCategory === null}
@@ -351,8 +351,8 @@ export function TakeawayPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="space-y-2">
             {menuItems.map((menuItem) => (
               <TakeawayMenuItemRow
                 key={menuItem.id}
@@ -362,9 +362,9 @@ export function TakeawayPage() {
               />
             ))}
           </div>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <h3 className="mb-2 border-b pb-2 font-semibold">Order Cart</h3>
-            <div className="space-y-2">
+          <div className="rounded-md border bg-muted/20 p-2">
+            <h3 className="mb-1 border-b pb-1 font-semibold">Order Cart</h3>
+            <div className="space-y-1">
               {cart.length === 0 ? (
                 <EmptyState
                   title="Cart is empty"
@@ -410,12 +410,13 @@ export function TakeawayPage() {
                 })
               )}
             </div>
-            <div className="mt-3 border-t pt-2">
-              <div className="mb-2 flex justify-between text-sm font-semibold">
+            <div className="mt-2 border-t pt-1">
+              <div className="mb-1 flex justify-between text-sm font-semibold">
                 <span>Total</span>
                 <span>₹{cartTotal.toFixed(2)}</span>
               </div>
               <Button
+                size="sm"
                 className="w-full"
                 onClick={sendToKitchen}
                 disabled={cart.length === 0}
@@ -427,97 +428,100 @@ export function TakeawayPage() {
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         <h2 className="text-lg font-semibold">Active Takeaway Orders</h2>
-        {takeawayOrders.length === 0 && (
+        {takeawayOrders.length === 0 ? (
           <EmptyState
             title="No active takeaway orders"
             description="Takeaway orders in progress will appear here."
           />
-        )}
-        {takeawayOrders.map((order) => (
-          <div key={order.id} className="rounded-md border p-4">
-            <div className="mb-2 flex items-start justify-between">
-              <div>
-                <h3 className="font-semibold">{order.customer_name}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {order.customer_phone}
-                </p>
-              </div>
-              <StatusBadge status={order.status} />
-            </div>
-            <ul className="space-y-2">
-              {db.orderItems
-                .filter((i) => i.order_id === order.id)
-                .map((item) => {
-                  const m = db.menuItems.find((x) => x.id === item.menu_item_id);
-                  const v = db.menuItemVariants.find((x) => x.id === item.menu_item_variant_id);
-                  return (
-                    <li
-                      key={item.id}
-                      className="flex items-start justify-between text-sm"
-                    >
-                      <div>
-                        <p className="font-medium">
-                          {m?.name}
-                          {v && (
-                            <span className="text-muted-foreground">
-                              {" "}({v.variant_name})
-                            </span>
-                          )}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {item.quantity} × ₹{item.unit_price}
-                        </p>
-                      </div>
-                      <StatusBadge status={item.status} />
-                    </li>
-                  );
-                })}
-            </ul>
-
-            {can("bill.create") && (
-              <div className="mt-4 border-t pt-3">
-                {billingOrderId === order.id ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select
-                      className={inputClass}
-                      value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                    >
-                      <option value="cash">Cash</option>
-                      <option value="card">Card</option>
-                      <option value="upi">UPI</option>
-                      <option value="wallet">Wallet</option>
-                    </select>
-                    <Button
-                      size="sm"
-                      onClick={() => billAndClose(order)}
-                      disabled={!isReadyForPickup(order)}
-                    >
-                      Pay & Pick Up
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setBillingOrderId(null)}
-                    >
-                      Cancel
-                    </Button>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {takeawayOrders.map((order) => (
+              <div key={order.id} className="rounded-md border p-3">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-semibold">{order.customer_name}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {order.customer_phone}
+                    </p>
                   </div>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={() => setBillingOrderId(order.id)}
-                    disabled={!isReadyForPickup(order)}
-                  >
-                    Bill & Pick Up
-                  </Button>
+                  <StatusBadge status={order.status} />
+                </div>
+                <ul className="space-y-1">
+                  {db.orderItems
+                    .filter((i) => i.order_id === order.id)
+                    .map((item) => {
+                      const m = db.menuItems.find((x) => x.id === item.menu_item_id);
+                      const v = db.menuItemVariants.find((x) => x.id === item.menu_item_variant_id);
+                      return (
+                        <li
+                          key={item.id}
+                          className="flex items-center justify-between text-sm gap-2"
+                        >
+                          <div>
+                            <p className="font-medium">
+                              {m?.name}
+                              {v && (
+                                <span className="text-muted-foreground">
+                                  {" "}({v.variant_name})
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.quantity} × ₹{item.unit_price}
+                            </p>
+                          </div>
+                          <StatusBadge status={item.status} />
+                        </li>
+                      );
+                    })}
+                </ul>
+
+                {can("bill.create") && (
+                  <div className="mt-2 border-t pt-2">
+                    {billingOrderId === order.id ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          className={inputClass}
+                          value={paymentMethod}
+                          onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                        >
+                          <option value="cash">Cash</option>
+                          <option value="card">Card</option>
+                          <option value="upi">UPI</option>
+                          <option value="wallet">Wallet</option>
+                        </select>
+                        <Button
+                          size="sm"
+                          onClick={() => billAndClose(order)}
+                          disabled={!isReadyForPickup(order)}
+                        >
+                          Pay & Pick Up
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setBillingOrderId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => setBillingOrderId(order.id)}
+                        disabled={!isReadyForPickup(order)}
+                      >
+                        Bill & Pick Up
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
@@ -606,11 +610,11 @@ function TakeawayMenuItemRow({
   return (
     <div
       className={cn(
-        "rounded-md border p-3",
+        "rounded-md border p-2",
         outOfStock && "opacity-50"
       )}
     >
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-2">
         <div>
           <h4 className="font-medium">{menuItem.name}</h4>
           {menuItem.description && (
@@ -626,12 +630,12 @@ function TakeawayMenuItemRow({
         )}
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-1 flex flex-wrap gap-1.5">
         {variants.map((v) => (
           <label
             key={v.id}
             className={cn(
-              "cursor-pointer rounded-md border px-2 py-1 text-sm",
+              "cursor-pointer rounded-md border px-2 py-0.5 text-sm",
               selectedVariantId === v.id
                 ? "border-primary bg-primary/10"
                 : "border-input hover:bg-muted"
@@ -655,12 +659,12 @@ function TakeawayMenuItemRow({
       </div>
 
       {modifiers.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-1 flex flex-wrap gap-1.5">
           {modifiers.map((mod) => (
             <label
               key={mod.id}
               className={cn(
-                "cursor-pointer rounded-md border px-2 py-1 text-xs",
+                "cursor-pointer rounded-md border px-2 py-0.5 text-xs",
                 selectedModifiers.has(mod.id)
                   ? "border-primary bg-primary/10"
                   : "border-input hover:bg-muted"
@@ -683,7 +687,7 @@ function TakeawayMenuItemRow({
         </div>
       )}
 
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-2 flex items-center gap-2">
         <input
           className={cn(inputClass, "w-16 px-2 py-1")}
           type="number"

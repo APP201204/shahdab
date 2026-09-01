@@ -168,7 +168,7 @@ export function KitchenPage() {
         />
       )}
 
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-3">
         {orders.map((order) => {
           const table = db.tables.find((t) => t.id === order.table_id);
           const batches = db.kotBatches
@@ -176,7 +176,7 @@ export function KitchenPage() {
             .sort((a, b) => a.batch_number - b.batch_number);
           return (
             <div key={order.id} className="rounded-md border bg-card shadow-sm">
-              <div className="border-b bg-muted/30 p-3">
+              <div className="border-b bg-muted/30 p-2">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold">{orderHeader(order, table)}</h3>
                   <span className="text-xs text-muted-foreground">
@@ -189,13 +189,13 @@ export function KitchenPage() {
                   </p>
                 )}
               </div>
-              <div className="space-y-3 p-3">
+              <div className="space-y-2 p-2">
                 {batches.map((batch) => (
                   <div key={batch.id}>
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">
                       KOT #{batch.batch_number}
                     </p>
-                    <ul className="space-y-2">
+                    <ul className="space-y-1">
                       {db.orderItems
                         .filter((i) => i.kot_batch_id === batch.id)
                         .map((item) => {
@@ -216,11 +216,11 @@ export function KitchenPage() {
                             <li
                               key={item.id}
                               className={cn(
-                                "flex items-start justify-between rounded-md border bg-background p-2",
+                                "flex items-start gap-2 rounded-md border bg-background p-1.5",
                                 !isRelevant && "bg-muted/40 opacity-50"
                               )}
                             >
-                              <div className="text-sm">
+                              <div className="min-w-0 flex-1 text-sm">
                                 <p className="font-medium">
                                   {menuItem?.name}
                                   {variant && (
@@ -238,7 +238,7 @@ export function KitchenPage() {
                                   Qty: {item.quantity}
                                 </p>
                               </div>
-                              <div className="flex flex-col items-end gap-1">
+                              <div className="flex shrink-0 items-center gap-2">
                                 <StatusBadge status={item.status} />
                                 {isRelevant && label && (
                                   <Button

@@ -50,12 +50,12 @@ export function Login() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-8 shadow-sm">
-        <h1 className="mb-2 text-2xl font-bold text-card-foreground">Shahdab</h1>
-        <p className="mb-6 text-sm text-muted-foreground">Sign in to your outlet</p>
+      <div className="w-full max-w-lg rounded-lg border border-border bg-card p-5 shadow-sm">
+        <h1 className="mb-1 text-2xl font-bold text-card-foreground">Shahdab</h1>
+        <p className="mb-4 text-sm text-muted-foreground">Sign in to your outlet</p>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1 sm:col-span-2">
             <label className="text-sm font-medium" htmlFor="org">
               Organization
             </label>
@@ -73,7 +73,7 @@ export function Login() {
             </select>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1">
             <label className="text-sm font-medium" htmlFor="staff">
               Staff
             </label>
@@ -96,7 +96,7 @@ export function Login() {
           </div>
 
           {selectedStaff && (
-            <div className="space-y-2">
+            <div className="space-y-1">
               <label className="text-sm font-medium" htmlFor="outlet">
                 Outlet
               </label>
@@ -116,9 +116,11 @@ export function Login() {
             </div>
           )}
 
-          <Button onClick={handleLogin} disabled={!staffId} className="w-full" type="button">
-            Sign in
-          </Button>
+          <div className="sm:col-span-2">
+            <Button onClick={handleLogin} disabled={!staffId} className="w-full" type="button">
+              Sign in
+            </Button>
+          </div>
         </div>
       </div>
     </main>

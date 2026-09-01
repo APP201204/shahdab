@@ -83,7 +83,7 @@ export function WaitlistPage() {
     t ? `Table ${t.table_number} (cap ${t.capacity})` : "";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <h1 className="text-2xl font-bold">Waitlist</h1>
 
       {message && (
@@ -106,34 +106,34 @@ export function WaitlistPage() {
         />
       )}
 
-      <div className="grid gap-3">
+      <div className="grid gap-2">
         {entries.map((entry, index) => (
           <div
             key={entry.id}
-            className="rounded-md border bg-card p-4 shadow-sm"
+            className="rounded-md border bg-card p-3 shadow-sm"
           >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-semibold">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-0.5">
+                <p className="font-semibold leading-tight">
                   #{index + 1} {entry.customer_name}
                 </p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm leading-tight text-muted-foreground">
                   {entry.customer_phone} · {entry.party_size} people
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs leading-tight text-muted-foreground">
                   Joined {format(parseISO(entry.created_at), "h:mm a")} ·
                   status: {entry.status}
                 </p>
                 {entry.table_id && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs leading-tight text-muted-foreground">
                     Held table: {tableName(db.tables.find((t) => t.id === entry.table_id))}
                   </p>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
                 <select
-                  className={cn(inputClass, "w-auto min-w-[12rem]")}
+                  className={cn(inputClass, "w-auto min-w-[10rem] py-1.5")}
                   value={tableIds[entry.id] ?? ""}
                   onChange={(e) =>
                     setTableIds((prev) => ({

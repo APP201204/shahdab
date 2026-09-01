@@ -102,13 +102,13 @@ export function StockOutPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <h1 className="text-2xl font-bold">Stock Out</h1>
 
       {message && (
         <div
           className={cn(
-            "rounded-md p-3 text-sm",
+            "rounded-md p-2.5 text-sm",
             message.type === "error"
               ? "bg-destructive/10 text-destructive"
               : "bg-green-100 text-green-800"
@@ -118,7 +118,7 @@ export function StockOutPage() {
         </div>
       )}
 
-      <div className="space-y-6">
+      <div className="space-y-4">
         {categories.map((category) => {
           const categoryItems = items.filter(
             (item) => item.category_id === category.id
@@ -126,8 +126,8 @@ export function StockOutPage() {
           if (categoryItems.length === 0) return null;
           return (
             <div key={category.id}>
-              <h2 className="mb-3 text-lg font-semibold">{category.name}</h2>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <h2 className="mb-2 text-lg font-semibold">{category.name}</h2>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {categoryItems.map((item) => {
                   const out = isOutOfStock(item);
                   const kitchen = db.kitchens.find((k) => k.id === item.kitchen_id);
@@ -135,11 +135,11 @@ export function StockOutPage() {
                     <div
                       key={item.id}
                       className={cn(
-                        "rounded-md border p-3",
+                        "rounded-md border p-2.5",
                         out && "bg-red-50/50"
                       )}
                     >
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between gap-2">
                         <div>
                           <p className="font-medium">{item.name}</p>
                           <p className="text-xs text-muted-foreground">
@@ -148,7 +148,7 @@ export function StockOutPage() {
                         </div>
                         <span
                           className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                            "inline-flex items-center rounded-full px-1.5 py-0 text-xs font-medium",
                             out
                               ? "bg-red-100 text-red-800"
                               : "bg-green-100 text-green-800"
@@ -158,7 +158,7 @@ export function StockOutPage() {
                         </span>
                       </div>
                       <Button
-                        className="mt-3 w-full"
+                        className="mt-2 w-full"
                         size="sm"
                         variant={out ? "default" : "secondary"}
                         onClick={() => toggleStock(item)}

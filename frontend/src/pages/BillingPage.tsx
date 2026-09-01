@@ -544,8 +544,8 @@ export function BillingPage() {
   }
 
   return (
-    <div className={pageWrapper}>
-      <div className={pageHeader}>
+    <div className={cn(pageWrapper, "space-y-4")}>
+      <div className={cn(pageHeader, "gap-2")}>
         <h1 className="text-2xl font-bold">Billing</h1>
         {stations.length > 1 && (
           <select
@@ -571,6 +571,7 @@ export function BillingPage() {
         <div
           className={cn(
             messageBanner,
+            "p-2",
             message.type === "error"
               ? "bg-destructive/10 text-destructive"
               : "bg-green-100 text-green-800"
@@ -582,7 +583,7 @@ export function BillingPage() {
       )}
 
       {!selectedBill || !selectedOrder ? (
-        <div className="space-y-4">
+        <div className="space-y-3">
           <h2 className="text-lg font-semibold">Bill Requests</h2>
           {queueOrders.length === 0 ? (
             <EmptyState
@@ -590,7 +591,7 @@ export function BillingPage() {
               description="There are no fully served or bill-requested orders for this station."
             />
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {queueOrders.map((order) => {
                 const items = db.orderItems.filter(
                   (i) =>
@@ -607,10 +608,10 @@ export function BillingPage() {
                 return (
                   <div
                     key={order.id}
-                    className="rounded-md border bg-card p-4 shadow-sm"
+                    className="rounded-md border bg-card p-3 shadow-sm"
                   >
-                    <div className="mb-2 flex items-start justify-between">
-                      <div className="space-y-1">
+                    <div className="mb-1.5 flex items-start justify-between">
+                      <div className="space-y-0.5">
                         <h3 className="font-semibold">{orderTitle(order)}</h3>
                         <p className="text-xs text-muted-foreground">
                           {order.order_type} •{" "}
@@ -626,7 +627,7 @@ export function BillingPage() {
                         {formatCurrency(total)}
                       </span>
                     </div>
-                    <ul className="mb-3 space-y-1 text-sm">
+                    <ul className="mb-2 space-y-0.5 text-sm">
                       {items.map((item) => (
                         <li
                           key={item.id}
@@ -661,8 +662,8 @@ export function BillingPage() {
           )}
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className={pageHeader}>
+        <div className="space-y-3">
+          <div className={cn(pageHeader, "gap-2")}>
             <div>
               <h2 className="text-xl font-semibold">
                 Bill {selectedBill.bill_number}
@@ -674,6 +675,7 @@ export function BillingPage() {
             </div>
             <Button
               variant="outline"
+              size="sm"
               onClick={() => {
                 setSelectedBillId(null);
                 setSelectedOrderId(null);
@@ -724,9 +726,9 @@ export function BillingPage() {
             })}
             paid={totalPaid}
           >
-            <div className={cn(innerCard, "bg-card")}>
-              <h3 className="mb-2 text-sm font-semibold">Apply Discount</h3>
-              <div className="grid gap-2">
+            <div className={cn(innerCard, "bg-card p-2")}>
+              <h3 className="mb-1.5 text-sm font-semibold">Apply Discount</h3>
+              <div className="grid gap-1.5">
                 <select
                   className={inputClass}
                   value={discountItemId}
@@ -739,7 +741,7 @@ export function BillingPage() {
                     </option>
                   ))}
                 </select>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   <select
                     className={inputClass}
                     value={discountType}
@@ -773,9 +775,9 @@ export function BillingPage() {
               </div>
             </div>
 
-            <div className={cn(innerCard, "bg-card")}>
-              <h3 className="mb-2 text-sm font-semibold">Split Bill</h3>
-              <div className="mb-3 grid gap-2 sm:grid-cols-4">
+            <div className={cn(innerCard, "bg-card p-2")}>
+              <h3 className="mb-1.5 text-sm font-semibold">Split Bill</h3>
+              <div className="mb-2 grid gap-1.5 sm:grid-cols-4">
                 <select
                   className={inputClass}
                   value={splitType}
@@ -813,11 +815,11 @@ export function BillingPage() {
               </div>
 
               {splitType === "by_item" && (
-                <div className="mb-3 grid gap-2">
+                <div className="mb-2 grid gap-1.5">
                   {billItems.map((item) => (
                     <div
                       key={item.id}
-                      className="flex items-center justify-between rounded-md border p-2 text-sm"
+                      className="flex items-center justify-between rounded-md border p-1.5 text-sm"
                     >
                       <span>{itemDisplayName(item)}</span>
                       <input
@@ -839,7 +841,7 @@ export function BillingPage() {
               )}
 
               {splits.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {splits.map((split) => {
                     const splitPaid = db.payments
                       .filter(
@@ -851,7 +853,7 @@ export function BillingPage() {
                     return (
                       <div
                         key={split.id}
-                        className="flex items-center justify-between rounded-md border p-2 text-sm"
+                        className="flex items-center justify-between rounded-md border p-1.5 text-sm"
                       >
                         <span>
                           {split.split_label || split.split_type} •{" "}
@@ -868,9 +870,9 @@ export function BillingPage() {
               )}
             </div>
 
-            <div className={cn(innerCard, "bg-card")}>
-              <h3 className="mb-2 text-sm font-semibold">Payment</h3>
-              <div className="mb-3 grid gap-2 sm:grid-cols-5">
+            <div className={cn(innerCard, "bg-card p-2")}>
+              <h3 className="mb-1.5 text-sm font-semibold">Payment</h3>
+              <div className="mb-2 grid gap-1.5 sm:grid-cols-5">
                 <select
                   className={inputClass}
                   value={paymentSplitId}
@@ -919,11 +921,11 @@ export function BillingPage() {
               </div>
 
               {payments.length > 0 && (
-                <ul className="space-y-1 text-sm">
+                <ul className="space-y-0.5 text-sm">
                   {payments.map((p) => (
                     <li
                       key={p.id}
-                      className="flex items-center justify-between rounded-md border p-2"
+                      className="flex items-center justify-between rounded-md border p-1.5"
                     >
                       <span>
                         {p.payment_method}
@@ -945,7 +947,7 @@ export function BillingPage() {
                 </ul>
               )}
 
-              <div className="mt-4 space-y-2 border-t pt-4">
+              <div className="mt-3 space-y-1.5 border-t pt-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
                     Total paid: {formatCurrency(totalPaid)}

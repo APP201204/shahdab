@@ -1,4 +1,5 @@
 import { dataService, db } from "@/mocks/db";
+import { sendWhatsapp } from "@/services/whatsapp";
 import type { Table, WaitlistEntry } from "@/types";
 
 export function activeWaitlist(outletId: string): WaitlistEntry[] {
@@ -66,12 +67,18 @@ export function addToWaitlist(
   });
 }
 
-export function notifyNextCustomer(table: Table): WaitlistEntry | null {
+export async function notifyNextCustomer(
+  table: Table
+): Promise<WaitlistEntry | null> {
   const waiting = activeWaitlist(table.outlet_id).filter(
     (e) => e.status === "waiting" && e.party_size <= table.capacity
   );
   const next = waiting[0];
   if (!next) return null;
+  await sendWhatsapp(
+    next.customer_phone,
+    `Hi ${next.customer_name}, your table is ready for a party of ${next.party_size}. Please check in with the host.`
+  );
   const now = new Date().toISOString();
   dataService("waitlist").update(next.id, {
     status: "notified",
@@ -105,7 +112,9 @@ export function seatWaitlistEntry(
   return dataService("waitlist").findById(entry.id) ?? null;
 }
 
-export function markTableVacant(tableId: string): WaitlistEntry | null {
+export async function markTableVacant(
+  tableId: string
+): Promise<WaitlistEntry | null> {
   const table = dataService("tables").findById(tableId);
   if (!table) return null;
   dataService("tables").update(table.id, {

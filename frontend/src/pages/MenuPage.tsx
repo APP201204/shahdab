@@ -23,7 +23,7 @@ export function MenuPage() {
   const canManage = can("menu.create") || can("menu.update");
 
   return (
-    <div className={pageWrapper}>
+    <div className={cn(pageWrapper, "space-y-3")}>
       <h1 className="text-2xl font-bold">Menu</h1>
 
       {message && (
@@ -269,9 +269,9 @@ function MenuItemsSection({
   const visibleItems = items.filter((i) => i.organization_id === orgId);
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       {canManage ? (
-        <form onSubmit={handleSubmit} className="rounded-md border p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="rounded-md border p-3 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">
               {editingId ? "Edit item" : "Add item"}
@@ -283,7 +283,7 @@ function MenuItemsSection({
             )}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
             <input
               className={inputClass}
               placeholder="Item name"
@@ -354,8 +354,8 @@ function MenuItemsSection({
 
           {floors.length > 0 && (
             <div>
-              <h4 className="mb-2 text-sm font-medium">Floor price overrides</h4>
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+              <h4 className="mb-1.5 text-sm font-medium">Floor price overrides</h4>
+              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {floors.map((f) => (
                   <div key={f.id}>
                     <label className="text-xs text-muted-foreground">
@@ -382,8 +382,8 @@ function MenuItemsSection({
           )}
 
           <div>
-            <h4 className="mb-2 text-sm font-medium">Modifiers</h4>
-            <div className="flex flex-wrap gap-4">
+            <h4 className="mb-1.5 text-sm font-medium">Modifiers</h4>
+            <div className="flex flex-wrap gap-3">
               {modifiers.map((m) => (
                 <label
                   key={m.id}
@@ -401,7 +401,7 @@ function MenuItemsSection({
             </div>
           </div>
 
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <Plus className="mr-2 h-4 w-4" />
             {editingId ? "Update Menu Item" : "Add Menu Item"}
           </Button>
@@ -427,7 +427,7 @@ function MenuItemsSection({
           return (
             <li
               key={item.id}
-              className="flex items-center justify-between px-3 py-3"
+              className="flex items-center justify-between px-3 py-2"
             >
               <div className="space-y-0.5">
                 <p className="text-sm font-medium">

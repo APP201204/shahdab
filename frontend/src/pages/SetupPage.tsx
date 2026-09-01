@@ -48,7 +48,7 @@ export function SetupPage() {
   ] as const;
 
   return (
-    <div className={pageWrapper}>
+    <div className={cn(pageWrapper, "!space-y-3")}>
       <h1 className="text-2xl font-bold">Outlet Setup</h1>
       <div className={tabList}>
         {tabs.map((t) => (
@@ -72,6 +72,7 @@ export function SetupPage() {
         <div
           className={cn(
             messageBanner,
+            "!p-2",
             message.type === "error"
               ? "bg-destructive/10 text-destructive"
               : "bg-green-100 text-green-800"
@@ -173,8 +174,8 @@ function OrgSection({ setMessage }: SectionProps) {
   };
 
   return (
-    <section className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 grid gap-3 sm:grid-cols-2">
+    <section className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 grid gap-2 sm:grid-cols-2">
         <input
           className={inputClass}
           placeholder="Name"
@@ -204,7 +205,7 @@ function OrgSection({ setMessage }: SectionProps) {
           }
         />
         <div className="sm:col-span-2">
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <Plus className="mr-2 h-4 w-4" /> Add Organization
           </Button>
         </div>
@@ -213,7 +214,7 @@ function OrgSection({ setMessage }: SectionProps) {
         {items.map((o) => (
           <li
             key={o.id}
-            className="flex items-center justify-between px-3 py-2"
+            className="flex items-center justify-between px-2 py-1.5"
           >
             <span className="text-sm">
               {o.name} ({o.slug}) — {o.timezone}/{o.currency}
@@ -271,8 +272,8 @@ function OutletSection({ orgId, setMessage }: SectionProps) {
   };
 
   return (
-    <section className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 grid gap-3 sm:grid-cols-2">
+    <section className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 grid gap-2 sm:grid-cols-2">
         <select
           className={selectClass}
           value={selectedOrg}
@@ -317,7 +318,7 @@ function OutletSection({ orgId, setMessage }: SectionProps) {
           }
         />
         <div className="sm:col-span-2">
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <Plus className="mr-2 h-4 w-4" /> Add Outlet
           </Button>
         </div>
@@ -326,7 +327,7 @@ function OutletSection({ orgId, setMessage }: SectionProps) {
         {items.map((o) => (
           <li
             key={o.id}
-            className="flex items-center justify-between px-3 py-2"
+            className="flex items-center justify-between px-2 py-1.5"
           >
             <span className="text-sm">
               {o.name} — {o.address}
@@ -375,8 +376,8 @@ function FloorSection({ orgId, setMessage }: SectionProps) {
   };
 
   return (
-    <section className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 grid gap-3 sm:grid-cols-3">
+    <section className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 grid gap-2 sm:grid-cols-3">
         <input
           className={inputClass}
           placeholder="Floor name"
@@ -407,7 +408,7 @@ function FloorSection({ orgId, setMessage }: SectionProps) {
           }
         />
         <div className="sm:col-span-3">
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <Plus className="mr-2 h-4 w-4" /> Add Floor
           </Button>
         </div>
@@ -416,7 +417,7 @@ function FloorSection({ orgId, setMessage }: SectionProps) {
         {items.map((f) => (
           <li
             key={f.id}
-            className="flex items-center justify-between px-3 py-2"
+            className="flex items-center justify-between px-2 py-1.5"
           >
             <span className="text-sm">
               {f.name} — order {f.display_order}
@@ -465,8 +466,8 @@ function KitchenSection({ orgId, setMessage }: SectionProps) {
   };
 
   return (
-    <section className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 grid gap-3 sm:grid-cols-2">
+    <section className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 grid gap-2 sm:grid-cols-2">
         <input
           className={inputClass}
           placeholder="Kitchen name"
@@ -488,7 +489,7 @@ function KitchenSection({ orgId, setMessage }: SectionProps) {
           ))}
         </select>
         <div className="sm:col-span-2">
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <Plus className="mr-2 h-4 w-4" /> Add Kitchen
           </Button>
         </div>
@@ -497,7 +498,7 @@ function KitchenSection({ orgId, setMessage }: SectionProps) {
         {items.map((k) => (
           <li
             key={k.id}
-            className="flex items-center justify-between px-3 py-2"
+            className="flex items-center justify-between px-2 py-1.5"
           >
             <span className="text-sm">{k.name}</span>
             <Button
@@ -555,8 +556,8 @@ function BillingSection({ orgId, setMessage }: SectionProps) {
   };
 
   return (
-    <section className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 grid gap-3 sm:grid-cols-2">
+    <section className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 grid gap-2 sm:grid-cols-2">
         <input
           className={inputClass}
           placeholder="Billing station name"
@@ -578,7 +579,7 @@ function BillingSection({ orgId, setMessage }: SectionProps) {
           ))}
         </select>
         <div className="sm:col-span-2">
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <Plus className="mr-2 h-4 w-4" /> Add Billing Station
           </Button>
         </div>
@@ -589,7 +590,7 @@ function BillingSection({ orgId, setMessage }: SectionProps) {
           return (
             <li
               key={b.id}
-              className="flex items-center justify-between px-3 py-2"
+              className="flex items-center justify-between px-2 py-1.5"
             >
               <span className="text-sm">
                 {b.name} — {floor?.name}
@@ -651,8 +652,8 @@ function TableSection({ orgId, setMessage }: SectionProps) {
   };
 
   return (
-    <section className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 grid gap-3 sm:grid-cols-3">
+    <section className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 grid gap-2 sm:grid-cols-3">
         <input
           className={inputClass}
           placeholder="Table number"
@@ -686,7 +687,7 @@ function TableSection({ orgId, setMessage }: SectionProps) {
           }
         />
         <div className="sm:col-span-3">
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <Plus className="mr-2 h-4 w-4" /> Add Table
           </Button>
         </div>
@@ -697,7 +698,7 @@ function TableSection({ orgId, setMessage }: SectionProps) {
           return (
             <li
               key={t.id}
-              className="flex items-center justify-between px-3 py-2"
+              className="flex items-center justify-between px-2 py-1.5"
             >
               <span className="text-sm">
                 Table {t.table_number} — cap {t.capacity} — {floor?.name}
@@ -729,7 +730,7 @@ type VariantForm = {
 function MenuSection({ orgId, setMessage }: SectionProps) {
   const [menuTab, setMenuTab] = useState<"categories" | "items">("categories");
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div className={tabList}>
         <button
           onClick={() => setMenuTab("categories")}
@@ -789,8 +790,8 @@ function MenuCategorySection({ orgId, setMessage }: SectionProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 grid gap-3 sm:grid-cols-3">
+    <div className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 grid gap-2 sm:grid-cols-3">
         <input
           className={inputClass}
           placeholder="Category name"
@@ -821,7 +822,7 @@ function MenuCategorySection({ orgId, setMessage }: SectionProps) {
           }
         />
         <div className="sm:col-span-3">
-          <Button type="submit">
+          <Button type="submit" size="sm">
             <Plus className="mr-2 h-4 w-4" /> Add Category
           </Button>
         </div>
@@ -830,7 +831,7 @@ function MenuCategorySection({ orgId, setMessage }: SectionProps) {
         {categories.map((c) => (
           <li
             key={c.id}
-            className="flex items-center justify-between px-3 py-2"
+            className="flex items-center justify-between px-2 py-1.5"
           >
             <span className="text-sm">
               {c.name} — order {c.display_order}
@@ -965,9 +966,9 @@ function MenuItemSection({ orgId, setMessage }: SectionProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+    <div className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 space-y-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           <input
             className={inputClass}
             placeholder="Item name"
@@ -1015,8 +1016,8 @@ function MenuItemSection({ orgId, setMessage }: SectionProps) {
         </div>
 
         <div>
-          <h4 className="mb-2 text-sm font-medium">Modifiers</h4>
-          <div className="flex flex-wrap gap-4">
+          <h4 className="mb-1 text-sm font-medium">Modifiers</h4>
+          <div className="flex flex-wrap gap-2">
             {modifiers.map((m) => (
               <label
                 key={m.id}
@@ -1042,7 +1043,7 @@ function MenuItemSection({ orgId, setMessage }: SectionProps) {
               ? db.floors.filter((f) => f.outlet_id === category.outlet_id)
               : [];
             return (
-              <div key={i} className="rounded-md border p-3 space-y-2">
+              <div key={i} className="rounded-md border p-2 space-y-1">
                 <div className="grid gap-2 sm:grid-cols-2">
                   <input
                     className={inputClass}
@@ -1085,12 +1086,12 @@ function MenuItemSection({ orgId, setMessage }: SectionProps) {
               </div>
             );
           })}
-          <Button type="button" variant="outline" onClick={addVariant}>
+          <Button type="button" variant="outline" size="sm" onClick={addVariant}>
             Add variant
           </Button>
         </div>
 
-        <Button type="submit">
+        <Button type="submit" size="sm">
           <Plus className="mr-2 h-4 w-4" /> Add Menu Item
         </Button>
       </form>
@@ -1105,7 +1106,7 @@ function MenuItemSection({ orgId, setMessage }: SectionProps) {
           return (
             <li
               key={item.id}
-              className="flex items-center justify-between px-3 py-2"
+              className="flex items-center justify-between px-2 py-1.5"
             >
               <span className="text-sm">
                 {item.name} — {category?.name} — {kitchen?.name} — ₹
@@ -1168,8 +1169,8 @@ function TaxSection({ orgId, setMessage }: SectionProps) {
   };
 
   return (
-    <section className="space-y-4">
-      <form onSubmit={add} className="rounded-md border p-4 grid gap-3 sm:grid-cols-2">
+    <section className="space-y-3">
+      <form onSubmit={add} className="rounded-md border p-3 grid gap-2 sm:grid-cols-2">
         <input
           className={inputClass}
           placeholder="Tax name"
@@ -1222,7 +1223,7 @@ function TaxSection({ orgId, setMessage }: SectionProps) {
         Active
       </label>
       <div className="sm:col-span-2">
-        <Button type="submit">
+        <Button type="submit" size="sm">
           <Plus className="mr-2 h-4 w-4" /> Add Tax
         </Button>
       </div>
@@ -1231,7 +1232,7 @@ function TaxSection({ orgId, setMessage }: SectionProps) {
       {taxes.map((t) => (
         <li
           key={t.id}
-          className="flex items-center justify-between px-3 py-2"
+          className="flex items-center justify-between px-2 py-1.5"
         >
           <span className="text-sm">
             {t.name} — {t.percentage}% on {t.applicable_on} —{" "}

@@ -92,12 +92,12 @@ export function AuditLogsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Audit Logs</h1>
       </div>
 
-      <div className="grid gap-3 rounded-md border p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 rounded-md border p-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-muted-foreground">
             Entity type
@@ -167,9 +167,9 @@ export function AuditLogsPage() {
       />
 
       {selectedLog && (
-        <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/50 p-4 sm:p-6">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border bg-card p-5 shadow-lg">
-            <div className="mb-4 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/50 p-3 sm:p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border bg-card p-4 shadow-lg">
+            <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold">Audit Entry</h2>
                 <p className="text-xs text-muted-foreground">
@@ -186,7 +186,7 @@ export function AuditLogsPage() {
               </Button>
             </div>
 
-            <div className="mb-4 rounded-md border bg-background p-3 text-sm">
+            <div className="mb-3 rounded-md border bg-background p-2 text-sm">
               <p>
                 <span className="text-muted-foreground">Action:</span>{" "}
                 {selectedLog.action}
@@ -204,7 +204,7 @@ export function AuditLogsPage() {
               )}
             </div>
 
-            <div className="rounded-md border p-4">
+            <div className="rounded-md border p-3">
               <AuditDiff
                 before={selectedLog.before_json}
                 after={selectedLog.after_json}

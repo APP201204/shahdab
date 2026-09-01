@@ -75,7 +75,7 @@ export function CustomerQueuePage() {
     if (e.status === "seated") {
       const table = db.tables.find((t) => t.id === e.table_id);
       return (
-        <div className="space-y-2 rounded-md bg-green-100 p-4 text-green-800">
+        <div className="space-y-1 rounded-md bg-green-100 p-3 text-green-800">
           <p className="font-semibold">You are seated!</p>
           {table && <p>Please proceed to Table {table.table_number}.</p>}
         </div>
@@ -84,7 +84,7 @@ export function CustomerQueuePage() {
     if (e.status === "notified") {
       const table = db.tables.find((t) => t.id === e.table_id);
       return (
-        <div className="space-y-2 rounded-md bg-amber-100 p-4 text-amber-800">
+        <div className="space-y-1 rounded-md bg-amber-100 p-3 text-amber-800">
           <p className="flex items-center gap-2 font-semibold">
             <MessageCircle className="h-4 w-4" />
             Your table is ready
@@ -98,7 +98,7 @@ export function CustomerQueuePage() {
       );
     }
     return (
-      <div className="space-y-2 rounded-md border p-4">
+      <div className="space-y-1 rounded-md border p-3">
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Clock className="h-4 w-4" />
           Estimated wait: <span className="font-semibold">{e.estimated_wait_minutes} minutes</span>
@@ -113,7 +113,7 @@ export function CustomerQueuePage() {
 
   return (
     <div className="flex min-h-screen items-start justify-center bg-background p-4 text-foreground sm:items-center">
-      <div className="w-full max-w-md space-y-6 rounded-lg border bg-card p-6 shadow-sm">
+      <div className="w-full max-w-md space-y-4 rounded-lg border bg-card p-4 shadow-sm">
         <div>
           <h1 className="text-xl font-bold">{outlet.name}</h1>
           <p className="text-sm text-muted-foreground">Digital queue</p>
@@ -121,7 +121,7 @@ export function CustomerQueuePage() {
 
         {!entry ? (
           <>
-            <div className="space-y-2 rounded-md bg-muted/50 p-3 text-sm">
+            <div className="space-y-1 rounded-md bg-muted/50 p-2 text-sm">
               <p className="flex items-center gap-2">
                 <Clock className="h-4 w-4" />
                 Current estimated wait for {party}: {" "}
@@ -138,7 +138,7 @@ export function CustomerQueuePage() {
               </p>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <label className="flex items-center gap-2 text-sm font-medium">
                   <User className="h-4 w-4" /> Name
@@ -174,15 +174,15 @@ export function CustomerQueuePage() {
                 />
               </div>
               {error && (
-                <p className="text-sm text-destructive">{error}</p>
+                <p className="text-sm text-destructive sm:col-span-2">{error}</p>
               )}
-              <Button type="submit" className="w-full">
+              <Button type="submit" className="w-full sm:col-span-2">
                 Join Queue
               </Button>
             </form>
           </>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               Hi {entry.customer_name}, here is your queue status:
             </p>

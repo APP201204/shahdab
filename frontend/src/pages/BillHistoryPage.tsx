@@ -82,8 +82,8 @@ export function BillHistoryPage() {
   ];
 
   return (
-    <div className={pageWrapper}>
-      <div className={pageHeader}>
+    <div className={pageWrapper + " !space-y-3"}>
+      <div className={pageHeader + " !gap-2"}>
         <h1 className="text-2xl font-bold">Bill History</h1>
       </div>
       <DataTable

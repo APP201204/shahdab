@@ -32,8 +32,8 @@ export function NotificationsPage() {
       : notifications.filter((n) => !n.is_read);
 
   return (
-    <div className={`p-6 ${pageWrapper}`}>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className={`p-4 !space-y-4 ${pageWrapper}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <h1 className="text-2xl font-bold">
           Notifications {unreadCount > 0 && `(${unreadCount} unread)`}
         </h1>
@@ -71,15 +71,15 @@ export function NotificationsPage() {
             return (
               <li
                 key={n.id}
-                className={`flex items-start justify-between gap-4 p-4 ${
+                className={`flex items-start justify-between gap-3 p-3 ${
                   !n.is_read
                     ? "bg-muted/50 border-l-4 border-primary"
                     : "bg-card"
                 }`}
                 role="listitem"
               >
-                <div className="flex items-start gap-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
                     <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                   </div>
                   <div>

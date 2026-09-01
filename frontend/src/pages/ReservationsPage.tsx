@@ -215,7 +215,7 @@ export function ReservationsPage() {
 
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <h1 className="text-2xl font-bold">Reservations</h1>
 
       {message && (
@@ -231,11 +231,11 @@ export function ReservationsPage() {
         </div>
       )}
 
-      <section className="rounded-md border p-4">
-        <h2 className="mb-3 text-lg font-semibold">New Booking</h2>
+      <section className="rounded-md border p-3">
+        <h2 className="mb-2 text-base font-semibold">New Booking</h2>
         <form
           onSubmit={create}
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
         >
           <input
             className={inputClass}
@@ -293,7 +293,7 @@ export function ReservationsPage() {
               ))}
           </select>
           <div className="sm:col-span-2 lg:col-span-2">
-            <Button type="submit">Create Booking</Button>
+            <Button type="submit" size="sm">Create Booking</Button>
           </div>
         </form>
       </section>
@@ -323,7 +323,7 @@ export function ReservationsPage() {
         </button>
       </div>
 
-      <section className="space-y-3">
+      <section className="space-y-2">
         {reservations.length === 0 ? (
           <EmptyState
             title="No reservations"
@@ -339,9 +339,9 @@ export function ReservationsPage() {
             return (
               <div
                 key={r.id}
-                className="flex flex-col gap-3 rounded-md border p-4 sm:flex-row sm:items-center sm:justify-between"
+                className="grid grid-cols-1 gap-2 rounded-md border p-3 sm:grid-cols-[1fr_auto] sm:items-center"
               >
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold">{r.guest_name}</span>
                     <StatusBadge status={r.status} />
@@ -356,9 +356,9 @@ export function ReservationsPage() {
                       : " • No table assigned"}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center justify-start gap-1.5 sm:justify-end">
                   {r.table_id === null && canAct && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <select
                         className={inputClass}
                         value={assigning === r.id ? assignTableId : ""}

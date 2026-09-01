@@ -24,7 +24,7 @@ export function BillDetailPage() {
 
   if (!bill) {
     return (
-      <div className={pageWrapper}>
+      <div className={cn(pageWrapper, "space-y-4")}>
         <h1 className="text-2xl font-bold">Bill</h1>
         <NotFound />
       </div>
@@ -72,9 +72,9 @@ export function BillDetailPage() {
   }
 
   return (
-    <div className={pageWrapper}>
-      <div className={cn(pageHeader, "print:hidden")}>
-        <h1 className="text-2xl font-bold">Bill {bill.bill_number}</h1>
+    <div className={cn(pageWrapper, "space-y-4")}>
+      <div className={cn(pageHeader, "print:hidden", "gap-2 sm:gap-3")}>
+        <h1 className="text-xl font-bold">Bill {bill.bill_number}</h1>
         <div className="flex gap-2">
           <Button asChild variant="outline" size="sm">
             <Link to="/bills/history">
@@ -92,15 +92,15 @@ export function BillDetailPage() {
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-md rounded-lg border bg-card p-6 shadow-sm print:max-w-none print:border-0 print:bg-background print:shadow-none">
-        <div className="mb-6 text-center">
+      <div className="mx-auto w-full max-w-7xl rounded-lg border bg-card p-4 shadow-sm print:max-w-none print:border-0 print:bg-background print:shadow-none">
+        <div className="mb-4 text-center">
           <h2 className="text-lg font-bold">{outlet.name}</h2>
           <p className="text-sm text-muted-foreground">
             {station?.name} {floor && `• ${floor.name}`}
           </p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-1 text-sm">
+        <div className="mb-4 grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
           <span className="text-muted-foreground">Bill #</span>
           <span className="text-right font-medium">{bill.bill_number}</span>
           <span className="text-muted-foreground">Date</span>
@@ -133,20 +133,20 @@ export function BillDetailPage() {
           </span>
         </div>
 
-        <div className="mb-6 overflow-x-auto rounded-md border">
+        <div className="mb-4 overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted text-left text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 font-medium">Item</th>
-                <th className="px-3 py-2 text-right font-medium">Qty</th>
-                <th className="px-3 py-2 text-right font-medium">Price</th>
-                <th className="px-3 py-2 text-right font-medium">Total</th>
+                <th className="px-2 py-1.5 font-medium">Item</th>
+                <th className="px-2 py-1.5 text-right font-medium">Qty</th>
+                <th className="px-2 py-1.5 text-right font-medium">Price</th>
+                <th className="px-2 py-1.5 text-right font-medium">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-3 py-2">
+                  <td className="px-2 py-1.5">
                     <p className="font-medium">{itemName(item)}</p>
                     {itemModifiers(item) && (
                       <p className="text-xs text-muted-foreground">
@@ -157,11 +157,11 @@ export function BillDetailPage() {
                       {item.quantity} × {formatCurrency(item.unit_price)}
                     </p>
                   </td>
-                  <td className="px-3 py-2 text-right">{item.quantity}</td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-2 py-1.5 text-right">{item.quantity}</td>
+                  <td className="px-2 py-1.5 text-right">
                     {formatCurrency(item.unit_price)}
                   </td>
-                  <td className="px-3 py-2 text-right font-medium">
+                  <td className="px-2 py-1.5 text-right font-medium">
                     {formatCurrency(item.unit_price * item.quantity)}
                   </td>
                 </tr>
@@ -170,7 +170,7 @@ export function BillDetailPage() {
           </table>
         </div>
 
-        <div className="mb-6 space-y-1 text-sm">
+        <div className="mb-4 space-y-1 text-sm">
           <div className="flex justify-between">
             <span>Subtotal</span>
             <span className="text-right">{formatCurrency(bill.subtotal)}</span>
@@ -206,7 +206,7 @@ export function BillDetailPage() {
               </div>
             );
           })}
-          <div className="flex justify-between border-t pt-2 text-lg font-bold">
+          <div className="flex justify-between border-t pt-1.5 text-base font-bold print:text-lg">
             <span>Total</span>
             <span className="text-right">
               {formatCurrency(bill.total_amount)}
@@ -218,45 +218,49 @@ export function BillDetailPage() {
           </div>
         </div>
 
-        {splits.length > 0 && (
-          <div className="mb-6 rounded-md border p-3">
-            <p className="mb-1 text-sm font-semibold">Splits</p>
-            {splits.map((s) => {
-              const splitPaid = payments
-                .filter((p) => p.bill_split_id === s.id)
-                .reduce((sum, p) => sum + p.amount, 0);
-              return (
-                <div
-                  key={s.id}
-                  className="flex justify-between text-xs text-muted-foreground"
-                >
-                  <span>{s.split_label || s.split_type}</span>
-                  <span className="text-right">
-                    {formatCurrency(s.amount)} (paid {formatCurrency(splitPaid)})
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {payments.length > 0 && (
-          <div className="mb-6 rounded-md border p-3">
-            <p className="mb-1 text-sm font-semibold">Payments</p>
-            {payments.map((p) => (
-              <div
-                key={p.id}
-                className="flex justify-between text-xs text-muted-foreground"
-              >
-                <span>
-                  {p.payment_method}
-                  {p.transaction_ref && ` • ${p.transaction_ref}`}
-                </span>
-                <span className="text-right">
-                  {formatCurrency(p.amount)}
-                </span>
+        {(splits.length > 0 || payments.length > 0) && (
+          <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {splits.length > 0 && (
+              <div className="rounded-md border p-2">
+                <p className="mb-1 text-sm font-semibold">Splits</p>
+                {splits.map((s) => {
+                  const splitPaid = payments
+                    .filter((p) => p.bill_split_id === s.id)
+                    .reduce((sum, p) => sum + p.amount, 0);
+                  return (
+                    <div
+                      key={s.id}
+                      className="flex justify-between text-xs text-muted-foreground"
+                    >
+                      <span>{s.split_label || s.split_type}</span>
+                      <span className="text-right">
+                        {formatCurrency(s.amount)} (paid {formatCurrency(splitPaid)})
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            )}
+
+            {payments.length > 0 && (
+              <div className="rounded-md border p-2">
+                <p className="mb-1 text-sm font-semibold">Payments</p>
+                {payments.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex justify-between text-xs text-muted-foreground"
+                  >
+                    <span>
+                      {p.payment_method}
+                      {p.transaction_ref && ` • ${p.transaction_ref}`}
+                    </span>
+                    <span className="text-right">
+                      {formatCurrency(p.amount)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

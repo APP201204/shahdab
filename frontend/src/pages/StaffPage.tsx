@@ -142,7 +142,7 @@ function StaffSection({ orgId }: { orgId: string }) {
   };
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       {message && (
         <div
           className={cn(
@@ -155,8 +155,8 @@ function StaffSection({ orgId }: { orgId: string }) {
           {message.text}
         </div>
       )}
-      <form onSubmit={add} className="space-y-4 rounded-md border p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <form onSubmit={add} className="space-y-3 rounded-md border p-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           <input
             className={inputClass}
             placeholder="Full name"
@@ -207,8 +207,8 @@ function StaffSection({ orgId }: { orgId: string }) {
         </div>
 
         <div>
-          <h4 className="mb-2 text-sm font-medium">Roles</h4>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <h4 className="mb-1 text-sm font-medium">Roles</h4>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {roles.map((r) => (
               <label key={r.id} className="flex items-center gap-2 text-sm">
                 <input
@@ -223,10 +223,10 @@ function StaffSection({ orgId }: { orgId: string }) {
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           <div>
-            <h4 className="mb-2 text-sm font-medium">Floors</h4>
-            <div className="space-y-1">
+            <h4 className="mb-1 text-sm font-medium">Floors</h4>
+            <div className="space-y-0.5">
               {floors.map((f) => (
                 <label
                   key={f.id}
@@ -246,8 +246,8 @@ function StaffSection({ orgId }: { orgId: string }) {
             </div>
           </div>
           <div>
-            <h4 className="mb-2 text-sm font-medium">Tables</h4>
-            <div className="space-y-1">
+            <h4 className="mb-1 text-sm font-medium">Tables</h4>
+            <div className="space-y-0.5">
               {tables.map((t) => (
                 <label
                   key={t.id}
@@ -267,8 +267,8 @@ function StaffSection({ orgId }: { orgId: string }) {
             </div>
           </div>
           <div>
-            <h4 className="mb-2 text-sm font-medium">Kitchens</h4>
-            <div className="space-y-1">
+            <h4 className="mb-1 text-sm font-medium">Kitchens</h4>
+            <div className="space-y-0.5">
               {kitchens.map((k) => (
                 <label
                   key={k.id}
@@ -289,7 +289,7 @@ function StaffSection({ orgId }: { orgId: string }) {
           </div>
         </div>
 
-        <Button type="submit">
+        <Button type="submit" size="sm">
           <Plus className="mr-2 h-4 w-4" /> Add Staff
         </Button>
       </form>
@@ -304,7 +304,7 @@ function StaffSection({ orgId }: { orgId: string }) {
           return (
             <li
               key={s.id}
-              className="flex items-center justify-between px-3 py-2"
+              className="flex items-center justify-between px-3 py-1.5"
             >
               <span className="text-sm">
                 {s.name} ({s.phone}) — {sr || "no roles"}
@@ -366,24 +366,24 @@ function PermissionsSection() {
   };
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       {notice && (
-        <div className="rounded-md bg-green-100 p-3 text-sm text-green-800">
+        <div className="rounded-md bg-green-100 p-2 text-sm text-green-800">
           {notice}
         </div>
       )}
-      <div className="space-y-6">
+      <div className="space-y-4">
         {db.roles
           .filter((r) => r.is_system_role)
           .map((role) => (
             <div
               key={role.id}
-              className="rounded-md border p-4"
+              className="rounded-md border p-3"
             >
-              <h3 className="mb-3 text-base font-semibold capitalize">
+              <h3 className="mb-2 text-base font-semibold capitalize">
                 {role.name}
               </h3>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {db.permissions.map((perm) => (
                   <label
                     key={perm.id}
