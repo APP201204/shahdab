@@ -1,128 +1,81 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { inputClass } from "@/lib/styles";
-import { useAuth } from "@/contexts/AuthContext";
-import { dataService, db } from "@/mocks/db";
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
+import { useAuthStore, type User } from '../stores/authStore';
+
+interface LoginResponse {
+  token: string;
+  user: User;
+}
 
 export function Login() {
-  const { login, staff, roles, assignments } = useAuth();
   const navigate = useNavigate();
-  const organizations = useMemo(() => db.organizations, []);
-  const staffList = useMemo(() => dataService("staff").findAll(), []);
-  const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? "");
-  const [staffId, setStaffId] = useState("");
-  const [outletId, setOutletId] = useState("");
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const [username, setUsername] = useState('shadab');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!staff) return;
-    const firstKitchen = assignments.kitchens[0];
-    if (roles.includes("admin") || roles.includes("outlet_manager")) {
-      navigate("/setup", { replace: true });
-    } else if (roles.includes("captain")) {
-      navigate("/tables", { replace: true });
-    } else if (roles.includes("cashier")) {
-      navigate("/billing", { replace: true });
-    } else if (roles.includes("kitchen_manager") && firstKitchen) {
-      navigate(`/kitchen/${firstKitchen}`, { replace: true });
-    } else {
-      navigate("/", { replace: true });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const { data } = await api.post<LoginResponse>('/auth/login', { username, password });
+      setAuth(data.token, data.user);
+      navigate('/');
+    } catch (err) {
+      setError('Invalid username or password');
+    } finally {
+      setLoading(false);
     }
-  }, [staff, roles, assignments, navigate]);
-
-  const selectedStaff = useMemo(
-    () => staffList.find((s) => s.id === staffId),
-    [staffList, staffId]
-  );
-
-  const availableOutlets = useMemo(() => {
-    if (!selectedStaff) return [];
-    const staffRoleOutlets = db.staffRoles
-      .filter((sr) => sr.staff_id === selectedStaff.id)
-      .map((sr) => sr.outlet_id);
-    return db.outlets.filter((o) => staffRoleOutlets.includes(o.id));
-  }, [selectedStaff]);
-
-  const handleLogin = useCallback(() => {
-    if (!staffId) return;
-    login(staffId, outletId || null);
-  }, [staffId, outletId, login]);
+  };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-lg rounded-lg border border-border bg-card p-5 shadow-sm">
-        <h1 className="mb-1 text-2xl font-bold text-card-foreground">Shahdab</h1>
-        <p className="mb-4 text-sm text-muted-foreground">Sign in to your outlet</p>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1 sm:col-span-2">
-            <label className="text-sm font-medium" htmlFor="org">
-              Organization
-            </label>
-            <select
-              id="org"
-              className={inputClass}
-              value={organizationId}
-              onChange={(e) => setOrganizationId(e.target.value)}
-            >
-              {organizations.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.name}
-                </option>
-              ))}
-            </select>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-brand-900 text-gold-500 flex items-center justify-center text-2xl font-bold">
+            SH
           </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium" htmlFor="staff">
-              Staff
-            </label>
-            <select
-              id="staff"
-              className={inputClass}
-              value={staffId}
-              onChange={(e) => {
-                setStaffId(e.target.value);
-                setOutletId("");
-              }}
-            >
-              <option value="">Select staff</option>
-              {staffList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.phone})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedStaff && (
-            <div className="space-y-1">
-              <label className="text-sm font-medium" htmlFor="outlet">
-                Outlet
-              </label>
-              <select
-                id="outlet"
-                className={inputClass}
-                value={outletId}
-                onChange={(e) => setOutletId(e.target.value)}
-              >
-                <option value="">Default outlet</option>
-                {availableOutlets.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="sm:col-span-2">
-            <Button onClick={handleLogin} disabled={!staffId} className="w-full" type="button">
-              Sign in
-            </Button>
-          </div>
+          <h1 className="text-2xl font-semibold text-gray-900">RestaurantOS</h1>
+          <p className="text-gray-500 text-sm">The Taste of Hyderabad</p>
         </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-600 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-brand-600 focus:border-transparent outline-none"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2.5 px-4 bg-brand-800 hover:bg-brand-900 text-white font-medium rounded-lg transition-colors disabled:opacity-60"
+          >
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
+        </form>
       </div>
-    </main>
+    </div>
   );
 }

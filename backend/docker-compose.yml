@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: restaurantos-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: restaurantos
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: RestaurantOS.Api/Dockerfile
+    container_name: restaurantos-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=restaurantos;Username=postgres;Password=postgres"
+      Jwt__Key: "your-256-bit-secret-key-for-dev-only-change-in-production"
+      Jwt__Issuer: "RestaurantOS"
+      Jwt__Audience: "RestaurantOS.Frontend"
+      Jwt__ExpireHours: "8"
+      Cors__Origins__0: "http://localhost:5173"
+    ports:
+      - "5001:8080"
+
+volumes:
+  postgres_data:

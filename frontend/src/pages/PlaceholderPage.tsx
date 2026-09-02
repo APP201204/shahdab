@@ -1,21 +1,28 @@
-import { EmptyState } from "@/components/EmptyState";
-import { Construction } from "lucide-react";
-import { pageWrapper } from "@/lib/styles";
+import { useLocation } from 'react-router-dom';
 
-interface PlaceholderPageProps {
-  title: string;
-}
+const titles: Record<string, string> = {
+  '/': 'Dashboard',
+  '/table-service': 'Table Service',
+  '/quick-order': 'Quick Order',
+  '/kitchen': 'Kitchen Display',
+  '/delivery': 'Delivery',
+  '/tables': 'Table Management',
+  '/menu': 'Menu Management',
+  '/sections': 'Sections',
+  '/billing-stations': 'Billing Stations',
+  '/reports': 'Reports',
+};
 
-export function PlaceholderPage({ title }: PlaceholderPageProps) {
+export function PlaceholderPage() {
+  const location = useLocation();
+  const title = titles[location.pathname] || 'Page';
+
   return (
-    <div className={`p-4 ${pageWrapper} space-y-4`}>
-      <h1 className="text-2xl font-bold">{title}</h1>
-      <EmptyState
-        title="Coming soon"
-        description="This page will be implemented in the next module."
-        icon={<Construction className="h-8 w-8 text-muted-foreground" />}
-        className="p-6"
-      />
+    <div className="p-8">
+      <h1 className="text-2xl font-semibold text-gray-900 mb-4">{title}</h1>
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-12 text-center">
+        <p className="text-gray-500">This page is coming soon.</p>
+      </div>
     </div>
   );
 }
