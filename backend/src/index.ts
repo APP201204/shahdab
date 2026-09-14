@@ -12,6 +12,8 @@ import reservationRoutes from "./routes/reservations.ts";
 import orderRoutes from "./routes/orders.ts";
 import kitchenRoutes from "./routes/kitchen.ts";
 import billingRoutes from "./routes/billing.ts";
+import notificationRoutes from "./routes/notifications.ts";
+import reportRoutes from "./routes/reports.ts";
 
 const app = Fastify({ logger: true });
 
@@ -29,6 +31,8 @@ await app.register(reservationRoutes, { prefix: "/api/v1" });
 await app.register(orderRoutes, { prefix: "/api/v1" });
 await app.register(kitchenRoutes, { prefix: "/api/v1" });
 await app.register(billingRoutes, { prefix: "/api/v1" });
+await app.register(notificationRoutes, { prefix: "/api/v1" });
+await app.register(reportRoutes, { prefix: "/api/v1" });
 
 await app.ready();
 

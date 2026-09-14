@@ -2,6 +2,7 @@ import { eq, and, inArray, notInArray } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
 import { emitKitchenTicket, emitTableUpdate } from "./events.ts";
+import * as notifications from "./notifications.ts";
 
 export async function getTickets(kitchenId: string) {
   const items = await db
@@ -133,7 +134,23 @@ export async function markItemReady({ orderItemId }: { orderItemId: string }) {
         .select()
         .from(schema.tables)
         .where(eq(schema.tables.id, order.tableId));
-      if (table) emitTableUpdate(order.outletId, table);
+      if (table) {
+        emitTableUpdate(order.outletId, table);
+        if (table.waiterId) {
+          const [waiter] = await tx
+            .select()
+            .from(schema.staff)
+            .where(eq(schema.staff.id, table.waiterId));
+          if (waiter?.userId) {
+            await notifications.createAndNotify({
+              outletId: order.outletId,
+              room: `waiter:${waiter.id}`,
+              message: `${updated.name} is ready for ${table.name}`,
+              userId: waiter.userId,
+            });
+          }
+        }
+      }
     }
     emitKitchenTicket(order.outletId, orderItem.kitchenId ?? "default", {
       item: updated,
@@ -178,6 +195,13 @@ export async function markTakeawayAllReady({ orderId }: { orderId: string }) {
     for (const [kitchenId, kitchenItems] of byKitchen.entries()) {
       emitKitchenTicket(order.outletId, kitchenId, { orderId, items: kitchenItems });
     }
+
+    const customer = order.customerName ?? "Takeaway";
+    await notifications.createAndNotify({
+      outletId: order.outletId,
+      room: `outlet:${order.outletId}:counter`,
+      message: `${customer}'s order is ready for pickup`,
+    });
 
     return { orderId, status: "ready" };
   });

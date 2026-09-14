@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
 import { emitTableUpdate } from "./events.ts";
+import * as notifications from "./notifications.ts";
 
 export async function seatTable({
   tableId,
@@ -78,6 +79,28 @@ export async function requestBill({ tableId }: { tableId: string }) {
       .where(eq(schema.tables.id, tableId))
       .returning();
     emitTableUpdate(updated.outletId, updated);
+
+    await notifications.createAndNotify({
+      outletId: updated.outletId,
+      room: `outlet:${updated.outletId}:billing:${updated.sectionId}`,
+      message: `Bill requested for ${updated.name}`,
+    });
+
+    if (updated.waiterId) {
+      const [waiter] = await tx
+        .select()
+        .from(schema.staff)
+        .where(eq(schema.staff.id, updated.waiterId));
+      if (waiter?.userId) {
+        await notifications.createAndNotify({
+          outletId: updated.outletId,
+          room: `waiter:${waiter.id}`,
+          message: `Bill requested for ${updated.name}`,
+          userId: waiter.userId,
+        });
+      }
+    }
+
     return updated;
   });
 }
