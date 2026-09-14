@@ -25,10 +25,14 @@ export async function listStaff({ outletId }: { outletId: string }) {
   }
 
   return {
-    staff: rows.map((s) => ({
-      ...s,
-      roles: rolesByStaff.get(s.id) ?? [],
-    })),
+    staff: rows.map((s) => {
+      const staffRoles = rolesByStaff.get(s.id) ?? [];
+      return {
+        ...s,
+        roles: staffRoles.map((r) => r.role),
+        assignment: staffRoles[0]?.assignment,
+      };
+    }),
   };
 }
 
@@ -85,7 +89,7 @@ export async function createStaff({
       });
     }
 
-    return { ...staff, roles };
+    return { ...staff, roles, assignment };
   });
 }
 
@@ -146,6 +150,6 @@ export async function updateStaff({
       .from(schema.staffRoles)
       .where(eq(schema.staffRoles.staffId, staffId));
 
-    return { ...updated, roles: newRoles };
+    return { ...updated, roles: newRoles.map((r) => r.role), assignment: newRoles[0]?.assignment };
   });
 }

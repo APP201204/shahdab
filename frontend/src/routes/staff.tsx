@@ -21,8 +21,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SECTIONS, STAFF, type StaffMember, type StaffRole } from "@/data/seed";
 import { cn } from "@/lib/utils";
+import { useStaff, useCreateStaff, useUpdateStaff } from "@/hooks/useStaff";
+import { useSections } from "@/hooks/useSections";
+import { api, type Staff, type StaffRole } from "@/lib/api";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/staff")({
@@ -50,28 +52,47 @@ const ROLES: { id: StaffRole; label: string }[] = [
 
 const roleLabel = (r: StaffRole) => ROLES.find((x) => x.id === r)?.label ?? r;
 
-const ASSIGNMENTS = [
-  "Main Counter",
-  "Parcel Counter",
-  "Main Kitchen",
-  ...SECTIONS.map((s) => s.name),
-  "Dine In · T1–T4",
-  "Dine In · T11–T12",
-  "Mezzanine · T5–T7",
-  "Aiwan-e-Khas · T8–T10",
-];
-
 function Staff() {
-  const [staff, setStaff] = useState<StaffMember[]>(STAFF);
-  const [draft, setDraft] = useState<StaffMember | null>(null);
+  const { data: staffData, isLoading } = useStaff();
+  const { data: sectionsData } = useSections();
+  const create = useCreateStaff();
+  const update = useUpdateStaff();
+  const staff = staffData?.staff ?? [];
+  const [draft, setDraft] = useState<Staff | null>(null);
   const [isNew, setIsNew] = useState(false);
+
+  const assignments = [
+    "Main Counter",
+    "Parcel Counter",
+    "Main Kitchen",
+    ...(sectionsData?.sections.map((s) => s.name) ?? []),
+    "Dine In · T1–T4",
+    "Dine In · T11–T12",
+    "Mezzanine · T5–T7",
+    "Aiwan-e-Khas · T8–T10",
+  ];
+
+  const outletId = staff[0]?.outletId ?? sectionsData?.sections[0]?.outletId ?? "";
+
+  if (isLoading) {
+    return <div className="p-5 text-muted-foreground">Loading staff…</div>;
+  }
 
   const openNew = () => {
     setIsNew(true);
-    setDraft({ id: `st${Date.now()}`, name: "", phone: "", roles: [], active: true });
+    setDraft({
+      id: "",
+      userId: "",
+      outletId: "",
+      name: "",
+      phone: "",
+      roles: [],
+      active: true,
+      createdAt: "",
+    });
   };
 
-  const save = () => {
+  const save = async () => {
     if (!draft) return;
     if (!draft.name.trim() || !draft.phone.trim()) {
       toast.error("Name and phone are required");
@@ -81,11 +102,35 @@ function Staff() {
       toast.error("Assign at least one role");
       return;
     }
-    setStaff((prev) =>
-      isNew ? [...prev, draft] : prev.map((s) => (s.id === draft.id ? draft : s)),
-    );
-    toast.success(isNew ? "Staff member added" : "Staff member updated");
-    setDraft(null);
+    try {
+      if (isNew) {
+        if (!outletId) {
+          toast.error("Outlet not loaded");
+          return;
+        }
+        await create.mutateAsync({
+          outletId,
+          name: draft.name.trim(),
+          phone: draft.phone.trim(),
+          roles: draft.roles,
+          active: draft.active,
+          ...(draft.assignment ? { assignment: draft.assignment } : {}),
+        });
+      } else {
+        await update.mutateAsync({
+          id: draft.id,
+          name: draft.name.trim(),
+          phone: draft.phone.trim(),
+          roles: draft.roles,
+          active: draft.active,
+          ...(draft.assignment ? { assignment: draft.assignment } : {}),
+        });
+      }
+      toast.success(isNew ? "Staff member added" : "Staff member updated");
+      setDraft(null);
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to save staff");
+    }
   };
 
   return (
@@ -154,7 +199,10 @@ function Staff() {
               <Switch
                 checked={s.active}
                 onCheckedChange={(on) =>
-                  setStaff((prev) => prev.map((x) => (x.id === s.id ? { ...x, active: on } : x)))
+                  update.mutate({
+                    id: s.id,
+                    active: on,
+                  })
                 }
                 aria-label={`Toggle ${s.name} active`}
               />
@@ -222,7 +270,7 @@ function Staff() {
                     <SelectValue placeholder="Select floor / station / kitchen" />
                   </SelectTrigger>
                   <SelectContent>
-                    {ASSIGNMENTS.map((a) => (
+                    {assignments.map((a) => (
                       <SelectItem key={a} value={a}>
                         {a}
                       </SelectItem>

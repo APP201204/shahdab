@@ -32,6 +32,26 @@ function put(path: string, body?: unknown) {
   });
 }
 
+export type StaffRole =
+  | "captain"
+  | "waiter"
+  | "kitchen-manager"
+  | "cashier"
+  | "outlet-manager"
+  | "admin";
+
+export type Staff = {
+  id: string;
+  userId: string;
+  outletId: string;
+  name: string;
+  phone: string;
+  active: boolean;
+  roles: StaffRole[];
+  assignment?: string | null;
+  createdAt: string;
+};
+
 export type PaymentMethod = "cash" | "card" | "upi" | "wallet";
 
 export type Payment = {
@@ -142,6 +162,28 @@ export type CreateReservationInput = {
 };
 
 export const api = {
+  staff: {
+    list: (outlet: string) =>
+      get(`/staff?outlet=${encodeURIComponent(outlet)}`) as Promise<{ staff: Staff[] }>,
+    create: (input: {
+      outletId: string;
+      name: string;
+      phone: string;
+      roles: StaffRole[];
+      assignment?: string;
+      active?: boolean;
+    }) => post("/staff", input) as Promise<Staff>,
+    update: (
+      id: string,
+      input: {
+        name?: string;
+        phone?: string;
+        roles?: StaffRole[];
+        assignment?: string;
+        active?: boolean;
+      }
+    ) => put(`/staff/${encodeURIComponent(id)}`, input) as Promise<Staff>,
+  },
   sections: {
     list: (outlet: string) =>
       get(`/sections?outlet=${encodeURIComponent(outlet)}`) as Promise<{ sections: Section[] }>,
