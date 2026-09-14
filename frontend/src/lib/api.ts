@@ -76,10 +76,97 @@ export type Bill = {
   payments: Payment[];
 };
 
+export type Section = {
+  id: string;
+  outletId: string;
+  name: string;
+  type: "dine-in" | "takeaway";
+  tagline?: string | null;
+  serviceCharge: number;
+  color?: string | null;
+  ownBranding: boolean;
+  active: boolean;
+};
+
+export type TableStatus =
+  | "available"
+  | "reserved"
+  | "occupied"
+  | "bill-requested"
+  | "paid"
+  | "needs-cleaning";
+
+export type Table = {
+  id: string;
+  outletId: string;
+  sectionId: string;
+  floorId?: string | null;
+  number: number;
+  name: string;
+  capacity: number;
+  status: TableStatus;
+  guests: number;
+  waiterId?: string | null;
+  startedAt?: string | null;
+  kots: number;
+  mergeGroupId?: string | null;
+  splitGroupId?: string | null;
+  parentTableId?: string | null;
+  suffix?: string | null;
+  createdAt: string;
+};
+
+export type ReservationStatus = "booked" | "seated" | "cancelled" | "no-show";
+
+export type Reservation = {
+  id: string;
+  outletId: string;
+  sectionId: string;
+  tableId?: string | null;
+  guestName: string;
+  phone: string;
+  partySize: number;
+  time: string;
+  status: ReservationStatus;
+  createdAt: string;
+};
+
+export type CreateReservationInput = {
+  outletId: string;
+  guestName: string;
+  phone: string;
+  partySize: number;
+  time: string;
+  sectionId: string;
+  tableId?: string;
+};
+
 export const api = {
+  sections: {
+    list: (outlet: string) =>
+      get(`/sections?outlet=${encodeURIComponent(outlet)}`) as Promise<{ sections: Section[] }>,
+  },
   bills: {
     list: (outlet: string) =>
       get(`/bills?outlet=${encodeURIComponent(outlet)}`) as Promise<{ bills: Bill[] }>,
     get: (id: string) => get(`/bills/${encodeURIComponent(id)}`) as Promise<Bill>,
+  },
+  tables: {
+    list: (outlet: string) =>
+      get(`/tables?outlet=${encodeURIComponent(outlet)}`) as Promise<{ tables: Table[] }>,
+  },
+  reservations: {
+    list: (outlet: string) =>
+      get(`/reservations?outlet=${encodeURIComponent(outlet)}`) as Promise<{
+        reservations: Reservation[];
+      }>,
+    create: (input: CreateReservationInput) =>
+      post("/reservations", input) as Promise<Reservation>,
+    seat: (id: string, body?: { waiterId?: string }) =>
+      post(`/reservations/${encodeURIComponent(id)}/seat`, body) as Promise<Reservation>,
+    cancel: (id: string) =>
+      post(`/reservations/${encodeURIComponent(id)}/cancel`) as Promise<Reservation>,
+    noShow: (id: string) =>
+      post(`/reservations/${encodeURIComponent(id)}/no-show`) as Promise<Reservation>,
   },
 };

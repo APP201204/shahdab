@@ -19,10 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SECTIONS, type Reservation, type ReservationStatus } from "@/data/seed";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { timeOf } from "@/lib/format";
-import { useAppState } from "@/lib/app-state";
+import { useReservations } from "@/hooks/useReservations";
+import { useTables } from "@/hooks/useTables";
+import { useSections } from "@/hooks/useSections";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/reservations")({
@@ -39,14 +43,14 @@ export const Route = createFileRoute("/reservations")({
   component: Reservations,
 });
 
-const statusStyle: Record<ReservationStatus, string> = {
+const statusStyle: Record<string, string> = {
   booked: "bg-primary-soft text-primary",
   seated: "bg-success-soft text-success",
   cancelled: "bg-muted text-muted-foreground",
   "no-show": "bg-danger-soft text-destructive",
 };
 
-const statusText: Record<ReservationStatus, string> = {
+const statusText: Record<string, string> = {
   booked: "Booked",
   seated: "Seated",
   cancelled: "Cancelled",
@@ -67,16 +71,26 @@ const EMPTY: Draft = {
   phone: "",
   partySize: "2",
   time: "19:30",
-  sectionId: "dine-in",
+  sectionId: "",
   tableId: "",
 };
 
+const OUTLET = "SHADAB";
+
 function Reservations() {
-  const { reservations, setReservations, tables, setTables, notify } = useAppState();
+  const queryClient = useQueryClient();
+  const { data: reservationsData, isLoading: reservationsLoading } = useReservations(OUTLET);
+  const { data: tablesData } = useTables(OUTLET);
+  const { data: sectionsData } = useSections(OUTLET);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(EMPTY);
 
-  const dineInSections = SECTIONS.filter((s) => s.type === "dine-in");
+  const reservations = reservationsData?.reservations ?? [];
+  const tables = tablesData?.tables ?? [];
+  const sections = sectionsData?.sections ?? [];
+
+  const dineInSections = sections.filter((s) => s.type === "dine-in");
+  const defaultSectionId = dineInSections[0]?.id ?? "";
   const availableTables = tables.filter(
     (t) =>
       t.sectionId === draft.sectionId &&
@@ -85,60 +99,78 @@ function Reservations() {
       !t.splitGroupId,
   );
 
+  useEffect(() => {
+    if (!draft.sectionId && defaultSectionId) {
+      setDraft((d) => ({ ...d, sectionId: defaultSectionId }));
+    }
+  }, [defaultSectionId]);
+
   const sorted = [...reservations].sort((a, b) => {
-    const order = (s: ReservationStatus) => (s === "booked" ? 0 : s === "seated" ? 1 : 2);
+    const order = (s: string) => (s === "booked" ? 0 : s === "seated" ? 1 : 2);
     return order(a.status) - order(b.status) || a.time.localeCompare(b.time);
   });
 
-  const save = () => {
+  const outletId = sections[0]?.outletId ?? tables[0]?.outletId ?? "";
+
+  const save = async () => {
     if (!draft.guestName.trim() || !draft.phone.trim()) {
       toast.error("Guest name and phone are required");
+      return;
+    }
+    if (!outletId) {
+      toast.error("Outlet not loaded");
       return;
     }
     const [h, m] = draft.time.split(":").map(Number);
     const when = new Date();
     when.setHours(h ?? 19, m ?? 30, 0, 0);
-    const r: Reservation = {
-      id: `r${Date.now()}`,
-      guestName: draft.guestName.trim(),
-      phone: draft.phone.trim(),
-      partySize: Math.max(1, Number(draft.partySize) || 1),
-      time: when.toISOString(),
-      sectionId: draft.sectionId,
-      ...(draft.tableId ? { tableId: draft.tableId } : {}),
-      status: "booked",
-    };
-    setReservations((prev) => [...prev, r]);
-    if (draft.tableId) {
-      setTables((prev) =>
-        prev.map((t) => (t.id === draft.tableId ? { ...t, status: "reserved" } : t)),
-      );
+    try {
+      await api.reservations.create({
+        outletId,
+        guestName: draft.guestName.trim(),
+        phone: draft.phone.trim(),
+        partySize: Math.max(1, Number(draft.partySize) || 1),
+        time: when.toISOString(),
+        sectionId: draft.sectionId,
+        ...(draft.tableId ? { tableId: draft.tableId } : {}),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["reservations", OUTLET] });
+      await queryClient.invalidateQueries({ queryKey: ["tables", OUTLET] });
+      toast.success(`Reserved for ${draft.guestName.trim()} at ${timeOf(when.toISOString())}`);
+      setOpen(false);
+      setDraft(EMPTY);
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to create reservation");
     }
-    toast.success(`Reserved for ${r.guestName} at ${timeOf(r.time)}`);
-    setOpen(false);
-    setDraft(EMPTY);
   };
 
-  const update = (id: string, status: ReservationStatus, tableId?: string) => {
-    setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
-    const r = reservations.find((x) => x.id === id);
-    const tid = tableId ?? r?.tableId;
-    if (tid) {
-      setTables((prev) =>
-        prev.map((t) =>
-          t.id === tid
-            ? {
-                ...t,
-                status: status === "seated" ? "occupied" : "available",
-                guests: status === "seated" ? (r?.partySize ?? 2) : 0,
-              }
-            : t,
-        ),
-      );
+  const update = async (id: string, status: "seated" | "cancelled" | "no-show") => {
+    try {
+      if (status === "seated") {
+        await api.reservations.seat(id);
+      } else if (status === "cancelled") {
+        await api.reservations.cancel(id);
+      } else {
+        await api.reservations.noShow(id);
+      }
+      await queryClient.invalidateQueries({ queryKey: ["reservations", OUTLET] });
+      await queryClient.invalidateQueries({ queryKey: ["tables", OUTLET] });
+      const r = reservations.find((x) => x.id === id);
+      if (status === "seated" && r) {
+        toast.success(`Reservation seated: ${r.guestName} · party of ${r.partySize}`);
+      } else if (status === "cancelled" && r) {
+        toast.success(`Reservation cancelled for ${r.guestName}`);
+      } else if (r) {
+        toast.success(`${r.guestName} marked no-show`);
+      }
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to update reservation");
     }
-    if (status === "seated" && r)
-      notify(`Reservation seated: ${r.guestName} · party of ${r.partySize}`);
   };
+
+  if (reservationsLoading) {
+    return <div className="p-5 text-muted-foreground">Loading reservations…</div>;
+  }
 
   return (
     <div className="space-y-5 p-5">
@@ -158,7 +190,7 @@ function Reservations() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {sorted.map((r) => {
-          const section = SECTIONS.find((s) => s.id === r.sectionId);
+          const section = sections.find((s) => s.id === r.sectionId);
           const table = r.tableId ? tables.find((t) => t.id === r.tableId) : undefined;
           return (
             <Card key={r.id} className="gap-3 p-4 shadow-card">
@@ -181,7 +213,7 @@ function Reservations() {
                   {timeOf(r.time)} · {r.partySize} guests
                 </span>
                 <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
-                  <span className="size-2 rounded-full" style={{ background: section?.color }} />
+                  <span className="size-2 rounded-full" style={{ background: section?.color ?? undefined }} />
                   {section?.name}
                 </span>
                 {table && <span className="rounded-full bg-muted px-2 py-0.5">{table.name}</span>}

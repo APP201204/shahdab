@@ -15,6 +15,7 @@ import billingRoutes from "./routes/billing.ts";
 import notificationRoutes from "./routes/notifications.ts";
 import reportRoutes from "./routes/reports.ts";
 import stockRoutes from "./routes/stock.ts";
+import sectionRoutes from "./routes/sections.ts";
 
 const app = Fastify({ logger: true });
 
@@ -35,6 +36,7 @@ await app.register(billingRoutes, { prefix: "/api/v1" });
 await app.register(notificationRoutes, { prefix: "/api/v1" });
 await app.register(reportRoutes, { prefix: "/api/v1" });
 await app.register(stockRoutes, { prefix: "/api/v1" });
+await app.register(sectionRoutes, { prefix: "/api/v1" });
 
 await app.ready();
 
