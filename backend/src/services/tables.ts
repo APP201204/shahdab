@@ -21,6 +21,29 @@ export async function seatTable({
       .where(eq(schema.tables.id, tableId))
       .for("update");
     if (!table) throw new Error("table not found");
+
+    if (table.status === "occupied") {
+      if (guests < 0) throw new Error("guests cannot be negative");
+      const [updated] = await tx
+        .update(schema.tables)
+        .set({ guests })
+        .where(eq(schema.tables.id, tableId))
+        .returning();
+      const [order] = await tx
+        .select()
+        .from(schema.orders)
+        .where(
+          and(
+            eq(schema.orders.tableId, tableId),
+            inArray(schema.orders.status, ["open", "partially-served", "fully-served"])
+          )
+        )
+        .orderBy(schema.orders.createdAt)
+        .limit(1);
+      emitTableUpdate(updated.outletId, updated);
+      return { table: updated, order: order ? { id: order.id } : null };
+    }
+
     if (!["available", "reserved"].includes(table.status)) {
       throw new Error("table cannot be seated");
     }
@@ -48,17 +71,20 @@ export async function seatTable({
       .where(eq(schema.tables.id, tableId))
       .returning();
 
-    await tx.insert(schema.orders).values({
-      id: randomUUID(),
-      outletId: updated.outletId,
-      sectionId: updated.sectionId,
-      tableId: updated.id,
-      orderType: "dine-in",
-      status: "open",
-    });
+    const [order] = await tx
+      .insert(schema.orders)
+      .values({
+        id: randomUUID(),
+        outletId: updated.outletId,
+        sectionId: updated.sectionId,
+        tableId: updated.id,
+        orderType: "dine-in",
+        status: "open",
+      })
+      .returning();
 
     emitTableUpdate(updated.outletId, updated);
-    return updated;
+    return { table: updated, order: { id: order.id } };
   });
 }
 

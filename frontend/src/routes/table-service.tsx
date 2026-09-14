@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChefHat,
   ClipboardList,
@@ -41,19 +41,30 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  CATEGORIES,
-  MENU_ITEMS,
-  SECTIONS,
-  type MenuItem,
-  type OrderLine,
-  type RTable,
-  type TableSplitGroup,
-  type Variant,
-} from "@/data/seed";
 import { inr } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useAppState } from "@/lib/app-state";
+import { type MenuItem, type OrderLine, type Table, type TableSplitGroup } from "@/lib/api";
+import { useTables } from "@/hooks/useTables";
+import { useTableGroups } from "@/hooks/useTableGroups";
+import { useMenu } from "@/hooks/useMenu";
+import { useSections } from "@/hooks/useSections";
+import { useStaff } from "@/hooks/useStaff";
+import {
+  useOrders,
+  useAddOrderItems,
+  useSendToKitchen,
+  useUpdateOrderItemNote,
+  useCancelOrderItem,
+} from "@/hooks/useOrders";
+import {
+  useSeatTable,
+  useRequestBill,
+  useMergeTables,
+  useReleaseMerge,
+  useSplitTable,
+  useUnsplitTable,
+  useMoveTable,
+} from "@/hooks/useTableActions";
 
 export const Route = createFileRoute("/table-service")({
   head: () => ({
@@ -75,7 +86,7 @@ export const Route = createFileRoute("/table-service")({
 
 const dotColor = { veg: "bg-veg", "non-veg": "bg-nonveg", egg: "bg-egg" } as const;
 
-const orderStatusMeta: Record<OrderLine["status"], { label: string; className: string }> = {
+const orderStatusMeta: Record<string, { label: string; className: string }> = {
   pending: { label: "Pending", className: "bg-warning-soft text-warning-foreground" },
   "sent-to-kitchen": { label: "In Kitchen", className: "bg-info-soft text-info" },
   "on-table": { label: "On Table", className: "bg-success-soft text-success" },
@@ -86,6 +97,7 @@ type ServiceableUnit = {
   id: string;
   name: string;
   sectionId: string;
+  sectionName: string;
   capacity: number;
   guests: number;
   waiter?: string;
@@ -209,9 +221,7 @@ function UnitCard({
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold">{unit.name}</span>
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        {SECTIONS.find((s) => s.id === unit.sectionId)?.name}
-      </p>
+      <p className="text-[11px] text-muted-foreground">{unit.sectionName}</p>
       <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1" title="Guests">
           <Users className="size-3" /> {unit.guests}
@@ -234,22 +244,27 @@ function UnitCard({
 }
 
 function TableService() {
-  const {
-    tables,
-    setTables,
-    mergeGroups,
-    setMergeGroups,
-    splitGroups,
-    setSplitGroups,
-    orders,
-    setOrders,
-    guestCounts,
-    setGuestCounts,
-    stockOut,
-    notify,
-  } = useAppState();
+  const { data: tablesData } = useTables("SHADAB");
+  const { data: groupsData } = useTableGroups("SHADAB");
+  const { data: menuData } = useMenu("SHADAB");
+  const { data: sectionsData } = useSections("SHADAB");
+  const { data: staffData } = useStaff("SHADAB");
+  const { data: ordersData } = useOrders();
+
+  const seatTable = useSeatTable();
+  const requestBillApi = useRequestBill();
+  const mergeTables = useMergeTables();
+  const releaseMerge = useReleaseMerge();
+  const splitTable = useSplitTable();
+  const unsplitTable = useUnsplitTable();
+  const moveTable = useMoveTable();
+  const addOrderItems = useAddOrderItems();
+  const sendToKitchen = useSendToKitchen();
+  const updateOrderItemNote = useUpdateOrderItemNote();
+  const cancelOrderItem = useCancelOrderItem();
+
   const [sectionFilter, setSectionFilter] = useState("all");
-  const [selectedUnitId, setSelectedUnitId] = useState("t1");
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [category, setCategory] = useState("all");
   const [query, setQuery] = useState("");
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
@@ -273,14 +288,29 @@ function TableService() {
   const [transferTarget, setTransferTarget] = useState("");
   const [splitDialog, setSplitDialog] = useState<{
     open: boolean;
-    table: RTable | null;
+    table: Table | null;
     count: 2 | 3;
     capacities: number[];
   }>({ open: false, table: null, count: 2, capacities: [0, 0] });
 
+  const tables = tablesData?.tables ?? [];
+  const mergeGroups = groupsData?.mergeGroups ?? [];
+  const splitGroups = groupsData?.splitGroups ?? [];
+
+  const orderMap = useMemo(() => {
+    return Object.fromEntries((ordersData?.units ?? []).map((u) => [u.id, u]));
+  }, [ordersData]);
+
+  const allItems = useMemo(() => menuData?.categories.flatMap((c) => c.items) ?? [], [menuData]);
+  const sections = useMemo(() => sectionsData?.sections ?? [], [sectionsData]);
+  const sectionNameMap = useMemo(
+    () => Object.fromEntries(sections.map((s) => [s.id, s.name])),
+    [sections],
+  );
+
   const SUFFIXES = ["a", "b", "c"];
 
-  const defaultCapacities = (table: RTable, count: number) => {
+  const defaultCapacities = (table: Table, count: number) => {
     const base = Math.floor(table.capacity / count);
     const caps = Array(count).fill(base);
     const remainder = table.capacity - base * count;
@@ -300,7 +330,7 @@ function TableService() {
     return caps;
   };
 
-  const hasActiveOrder = (unitId: string) => (orders[unitId]?.length ?? 0) > 0;
+  const hasActiveOrder = (unitId: string) => (orderMap[unitId]?.lines.length ?? 0) > 0;
 
   const units = useMemo<ServiceableUnit[]>(() => {
     const activeGroups = mergeGroups.filter((g) => g.status === "active");
@@ -310,8 +340,9 @@ function TableService() {
         id: t.id,
         name: t.name,
         sectionId: t.sectionId,
+        sectionName: sectionNameMap[t.sectionId] ?? "",
         capacity: t.capacity,
-        guests: guestCounts[t.id] ?? 0,
+        guests: t.guests,
         ...(t.waiter ? { waiter: t.waiter } : {}),
         kots: t.kots,
         kind: "table" as const,
@@ -322,17 +353,17 @@ function TableService() {
       }));
     const groupUnits = activeGroups.map((g) => {
       const groupTables = tables.filter((t) => g.tableIds.includes(t.id));
-      const groupGuests = guestCounts[g.id] ?? g.guests;
       return {
         id: g.id,
         name: g.name,
         sectionId: g.sectionId,
+        sectionName: sectionNameMap[g.sectionId] ?? "",
         capacity: groupTables.reduce((sum, t) => sum + t.capacity, 0),
-        guests: groupGuests,
+        guests: g.guests,
         ...(g.waiter ? { waiter: g.waiter } : {}),
         kots: groupTables.reduce((sum, t) => sum + t.kots, 0),
         kind: "group" as const,
-        occupied: groupGuests > 0 || (orders[g.id]?.length ?? 0) > 0,
+        occupied: g.guests > 0 || hasActiveOrder(g.id),
         isSubTable: false,
         number: groupTables.reduce((min, t) => Math.min(min, t.number), Infinity),
       };
@@ -343,11 +374,18 @@ function TableService() {
     const sortKey = (u: ServiceableUnit) =>
       u.number * 100 + (u.suffix ? u.suffix.charCodeAt(0) - 96 : 0);
     return allUnits.sort((a, b) => sortKey(a) - sortKey(b));
-  }, [tables, mergeGroups, guestCounts, orders, sectionFilter]);
+  }, [tables, mergeGroups, orderMap, sectionNameMap, sectionFilter]);
 
   const selectedUnit = units.find((u) => u.id === selectedUnitId) ?? units[0] ?? null;
   const unitId = selectedUnit?.id ?? "";
-  const lines = orders[unitId] ?? [];
+  const lines = orderMap[unitId]?.lines ?? [];
+
+  useEffect(() => {
+    const first = units[0];
+    if (selectedUnitId === null && first) {
+      setSelectedUnitId(first.id);
+    }
+  }, [selectedUnitId, units]);
 
   const canMerge = (u: ServiceableUnit) => {
     if (u.kind !== "table") return false;
@@ -380,7 +418,7 @@ function TableService() {
     );
   };
 
-  const openSplitDialog = (table: RTable) => {
+  const openSplitDialog = (table: Table) => {
     const count: 2 | 3 = 2;
     setSplitDialog({
       open: true,
@@ -416,85 +454,23 @@ function TableService() {
       return;
     }
 
-    const groupId = `sg-${Date.now()}`;
-    const existingGuests = guestCounts[table.id] ?? table.guests;
-    const existingOrder = orders[table.id] ?? [];
+    const subTables = capacities.map((c, i) => ({
+      capacity: c,
+      name: `Table ${table.number}${SUFFIXES[i]}`,
+    }));
 
-    const subTables: RTable[] = [];
-    const subTableIds: string[] = [];
-
-    for (let i = 0; i < count; i++) {
-      const suffix = SUFFIXES[i]!;
-      const id = `${table.id}${suffix}`;
-      const isFirst = i === 0;
-      const guests = isFirst ? existingGuests : 0;
-      const kots = isFirst ? table.kots : 0;
-      const waiter = isFirst ? table.waiter : undefined;
-      const startedAt = isFirst ? table.startedAt : undefined;
-      const hasOrder = isFirst && existingOrder.length > 0;
-      const status: RTable["status"] = guests > 0 || hasOrder ? "occupied" : "available";
-
-      subTableIds.push(id);
-      subTables.push({
-        id,
-        number: table.number,
-        name: `Table ${table.number}${suffix}`,
-        sectionId: table.sectionId,
-        capacity: capacities[i] ?? 0,
-        status,
-        guests,
-        ...(waiter ? { waiter } : {}),
-        ...(startedAt ? { startedAt } : {}),
-        kots,
-        parentTableId: table.id,
-        splitGroupId: groupId,
-        suffix,
-      });
-    }
-
-    const group: TableSplitGroup = {
-      id: groupId,
-      parentTableId: table.id,
-      sectionId: table.sectionId,
-      subTableIds,
-      status: "active",
-    };
-
-    setSplitGroups((prev) => [...prev, group]);
-    setTables((prev) => [
-      ...prev.map((t) => {
-        if (t.id !== table.id) return t;
-        const { waiter, startedAt, ...rest } = t;
-        return {
-          ...rest,
-          splitGroupId: groupId,
-          status: "available" as RTable["status"],
-          guests: 0,
-          kots: 0,
-        };
-      }),
-      ...subTables,
-    ]);
-    setGuestCounts((prev) => {
-      const next = { ...prev };
-      delete next[table.id];
-      subTables.forEach((st) => {
-        next[st.id] = st.guests;
-      });
-      return next;
-    });
-    setOrders((prev) => {
-      const next = { ...prev };
-      if (existingOrder.length > 0) {
-        next[subTableIds[0]!] = existingOrder;
-      }
-      delete next[table.id];
-      return next;
-    });
-
-    setSelectedUnitId(subTableIds[0]!);
-    closeSplitDialog();
-    toast.success(`${table.name} split into ${subTables.map((t) => t.name).join(", ")}`);
+    splitTable.mutate(
+      { tableId: table.id, subTables },
+      {
+        onSuccess: () => {
+          const names = subTables.map((st) => st.name).join(", ");
+          setSelectedUnitId(table.id);
+          closeSplitDialog();
+          toast.success(`${table.name} split into ${names}`);
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not split table"),
+      },
+    );
   };
 
   const handleUnsplit = (groupId: string) => {
@@ -504,8 +480,7 @@ function TableService() {
     const allClear = group.subTableIds.every((id) => {
       const st = tables.find((t) => t.id === id);
       if (!st) return false;
-      const guests = guestCounts[id] ?? st.guests;
-      if (guests > 0) return false;
+      if (st.guests > 0) return false;
       if (st.status !== "available") return false;
       if (hasActiveOrder(id)) return false;
       return true;
@@ -516,34 +491,15 @@ function TableService() {
       return;
     }
 
-    setTables((prev) =>
-      prev
-        .filter((t) => !group.subTableIds.includes(t.id))
-        .map((t) => {
-          if (t.id !== group.parentTableId) return t;
-          const { splitGroupId, waiter, startedAt, ...rest } = t;
-          return { ...rest, status: "available" as RTable["status"], guests: 0, kots: 0 };
-        }),
-    );
-    setSplitGroups((prev) =>
-      prev.map((g) => (g.id === groupId ? { ...g, status: "released" } : g)),
-    );
-    setGuestCounts((prev) => {
-      const next = { ...prev };
-      group.subTableIds.forEach((id) => delete next[id]);
-      next[group.parentTableId] = 0;
-      return next;
+    unsplitTable.mutate(groupId, {
+      onSuccess: () => {
+        if (selectedUnitId && group.subTableIds.includes(selectedUnitId)) {
+          setSelectedUnitId(units.find((u) => u.kind === "table")?.id ?? null);
+        }
+        toast.success("Table restored");
+      },
+      onError: (err: any) => toast.error(err?.message ?? "Could not unsplit table"),
     });
-    setOrders((prev) => {
-      const next = { ...prev };
-      group.subTableIds.forEach((id) => delete next[id]);
-      return next;
-    });
-
-    if (selectedUnitId && group.subTableIds.includes(selectedUnitId)) {
-      setSelectedUnitId(units.find((u) => u.kind === "table")?.id ?? "");
-    }
-    toast.success("Table restored");
   };
 
   const canSplit = (u: ServiceableUnit) => {
@@ -557,8 +513,7 @@ function TableService() {
       return group.subTableIds.every((id) => {
         const st = tables.find((t) => t.id === id);
         if (!st) return false;
-        const guests = guestCounts[id] ?? st.guests;
-        if (guests > 0) return false;
+        if (st.guests > 0) return false;
         if (st.status !== "available") return false;
         if (hasActiveOrder(id)) return false;
         return true;
@@ -570,7 +525,8 @@ function TableService() {
 
   const items = useMemo(
     () =>
-      MENU_ITEMS.filter((i) => i.status !== "disabled" && i.status !== "not-offered")
+      allItems
+        .filter((i) => i.status !== "disabled" && i.status !== "not-offered")
         .filter((i) =>
           category === "all"
             ? true
@@ -579,44 +535,58 @@ function TableService() {
               : i.categoryId === category,
         )
         .filter((i) => i.name.toLowerCase().includes(query.toLowerCase())),
-    [category, query],
+    [allItems, category, query],
   );
 
-  const activeVariant: Variant | undefined = selectedItem?.variants.find(
-    (v) => v.name === selectedVariant,
+  const categories = useMemo(
+    () => [{ id: "all", name: "All Items" }, { id: "favorites", name: "Favorites" }, ...menuData?.categories.map((c) => ({ id: c.id, name: c.name })) ?? []],
+    [menuData],
   );
 
-  const addVariant = (item: MenuItem, variantName?: string) => {
+  const activeVariant = selectedItem?.variants?.find((v) => v.name === selectedVariant);
+
+  const addVariant = async (item: MenuItem, variantName?: string) => {
     if (!selectedUnit) return;
-    const variant = item.variants.find((v) => v.name === variantName);
+    const variant = item.variants?.find((v) => v.name === variantName);
     if (variant && !variant.available) return;
-    const unitPrice = variant ? variant.price : item.price;
-    const note = pendingNote.trim();
-    setOrders((prev) => {
-      const current = prev[selectedUnit.id] ?? [];
-      const key = `${item.id}-${variant?.name ?? ""}`;
-      const existing = current.find(
-        (l) =>
-          `${l.itemId}-${l.variant ?? ""}` === key &&
-          l.status === "pending" &&
-          (l.note ?? "") === note,
-      );
-      const newLine: OrderLine = {
-        id: `${key}-${Date.now()}`,
-        itemId: item.id,
-        name: item.name,
-        qty: pendingQty,
-        unitPrice,
-        status: "pending",
-        ...(variant ? { variant: variant.name } : {}),
-        ...(item.mrp ? { mrp: true } : {}),
-        ...(note ? { note } : {}),
-      };
-      const next: OrderLine[] = existing
-        ? current.map((l) => (l === existing ? { ...l, qty: l.qty + pendingQty } : l))
-        : [...current, newLine];
-      return { ...prev, [selectedUnit.id]: next };
-    });
+    const note = pendingNote.trim() || undefined;
+    let orderId = orderMap[selectedUnit.id]?.orderId;
+    if (!orderId) {
+      if (selectedUnit.kind !== "table") {
+        toast.error("No order found for this unit");
+        return;
+      }
+      try {
+        const result = await seatTable.mutateAsync({
+          id: selectedUnit.id,
+          guests: Math.max(1, selectedUnit.guests || 1),
+        });
+        orderId = result.order?.id;
+      } catch (err: any) {
+        toast.error(err?.message ?? "Could not seat table");
+        return;
+      }
+    }
+    if (!orderId) {
+      toast.error("No order found for this unit");
+      return;
+    }
+    addOrderItems.mutate(
+      {
+        orderId,
+        items: [
+          {
+            menuItemId: item.id,
+            ...(variant?.id ? { variantId: variant.id } : {}),
+            qty: pendingQty,
+            ...(note ? { note } : {}),
+          },
+        ],
+      },
+      {
+        onError: (err: any) => toast.error(err?.message ?? "Could not add item"),
+      },
+    );
     setSelectedItem(null);
     setSelectedVariant(null);
     setPendingQty(1);
@@ -624,8 +594,8 @@ function TableService() {
   };
 
   const openItem = (item: MenuItem) => {
-    if (item.status === "unavailable" || stockOut[item.id]) return;
-    const first = item.variants.find((v) => v.available) ?? item.variants[0];
+    if (item.status === "unavailable" || item.outOfStock) return;
+    const first = item.variants?.find((v) => v.available) ?? item.variants?.[0];
     setSelectedItem(item);
     setSelectedVariant(first?.name ?? null);
     setPendingQty(1);
@@ -634,28 +604,50 @@ function TableService() {
 
   const changeQty = (lineId: string, delta: number) => {
     if (!selectedUnit) return;
-    setOrders((prev) => ({
-      ...prev,
-      [selectedUnit.id]: (prev[selectedUnit.id] ?? [])
-        .map((l) => (l.id === lineId ? { ...l, qty: l.qty + delta } : l))
-        .filter((l) => l.qty > 0),
-    }));
+    const orderId = orderMap[selectedUnit.id]?.orderId;
+    const line = lines.find((l) => l.id === lineId);
+    if (!line || !orderId) return;
+    if (line.status !== "pending") {
+      toast.error("Can only change quantity of pending items");
+      return;
+    }
+    const nextQty = line.qty + delta;
+    const menuItem = allItems.find((i) => i.id === line.itemId);
+    const variantId = menuItem?.variants?.find((v) => v.name === (line.variant ?? ""))?.id;
+    if (nextQty <= 0) {
+      cancelOrderItem.mutate(line.id, {
+        onSuccess: () => toast.success(`${line.name} removed`),
+        onError: (err: any) => toast.error(err?.message ?? "Could not remove item"),
+      });
+      return;
+    }
+    cancelOrderItem.mutate(line.id, {
+      onSuccess: () => {
+        addOrderItems.mutate({
+          orderId,
+          items: [
+            {
+              menuItemId: line.itemId,
+              ...(variantId ? { variantId } : {}),
+              qty: nextQty,
+              ...(line.note ? { note: line.note } : {}),
+            },
+          ],
+        });
+      },
+      onError: (err: any) => toast.error(err?.message ?? "Could not update quantity"),
+    });
   };
 
   const updateNote = (lineId: string, note: string) => {
     if (!selectedUnit) return;
-    setOrders((prev) => ({
-      ...prev,
-      [selectedUnit.id]: (prev[selectedUnit.id] ?? []).map((l) => {
-        if (l.id !== lineId) return l;
-        const trimmed = note.trim();
-        if (!trimmed) {
-          const { note: _note, ...rest } = l;
-          return rest as OrderLine;
-        }
-        return { ...l, note: trimmed };
-      }),
-    }));
+    const line = lines.find((l) => l.id === lineId);
+    if (!line) return;
+    if (line.status !== "pending") {
+      toast.error("Can only add notes to pending items");
+      return;
+    }
+    updateOrderItemNote.mutate({ id: lineId, note: note.trim() });
   };
 
   const cancelLine = (lineId: string) => {
@@ -668,67 +660,54 @@ function TableService() {
       );
       return;
     }
-    setOrders((prev) => ({
-      ...prev,
-      [selectedUnit.id]: (prev[selectedUnit.id] ?? []).map((l) =>
-        l.id === lineId ? { ...l, status: "cancelled" as const } : l,
-      ),
-    }));
-    toast.success(`${line.name} cancelled — removed from kitchen ticket and bill`);
+    cancelOrderItem.mutate(line.id, {
+      onSuccess: () => toast.success(`${line.name} cancelled — removed from kitchen ticket and bill`),
+      onError: (err: any) => toast.error(err?.message ?? "Could not cancel item"),
+    });
   };
 
   const requestBill = () => {
     if (!selectedUnit || selectedUnit.kind !== "table") return;
-    setTables((prev) =>
-      prev.map((t) => (t.id === selectedUnit.id ? { ...t, status: "bill-requested" } : t)),
-    );
-    notify(`Bill requested for ${selectedUnit.name} — ${sectionName}`);
-    toast.success(`${selectedUnit.name} moved to billing — ${inr(subtotal)}`);
+    requestBillApi.mutate(selectedUnit.id, {
+      onSuccess: () => toast.success(`${selectedUnit.name} moved to billing — ${inr(subtotal)}`),
+      onError: (err: any) => toast.error(err?.message ?? "Could not request bill"),
+    });
   };
 
   const placeOrder = () => {
     if (!selectedUnit) return;
     const hasPending = lines.some((l) => l.status === "pending");
     if (!hasPending) return;
-    setOrders((prev) => ({
-      ...prev,
-      [selectedUnit.id]: (prev[selectedUnit.id] ?? []).map((l) =>
-        l.status === "pending" ? { ...l, status: "sent-to-kitchen" } : l,
-      ),
-    }));
-    toast.success(`Order placed for ${selectedUnit.name}`);
+    const orderId = orderMap[selectedUnit.id]?.orderId;
+    const createdBy = staffData?.staff[0]?.id;
+    if (!orderId || !createdBy) {
+      toast.error("Cannot place order");
+      return;
+    }
+    sendToKitchen.mutate(
+      { orderId, createdBy },
+      {
+        onSuccess: () => toast.success(`Order placed for ${selectedUnit.name}`),
+        onError: (err: any) => toast.error(err?.message ?? "Could not place order"),
+      },
+    );
   };
 
   const handleSplit = (unit: ServiceableUnit) => {
     if (unit.kind === "group") {
-      const group = mergeGroups.find((g) => g.id === unit.id);
-      if (!group) return;
       if (hasActiveOrder(unit.id)) {
         toast.error(`${unit.name} has an active order — settle or close it before splitting`);
         return;
       }
-      setMergeGroups((prev) =>
-        prev.map((g) => (g.id === unit.id ? { ...g, status: "released" } : g)),
-      );
-      setTables((prev) =>
-        prev.map((t) => {
-          if (!group.tableIds.includes(t.id)) return t;
-          const { mergeGroupId: _, waiter: _w, ...rest } = t;
-          return { ...rest, status: "available", guests: 0 } as RTable;
-        }),
-      );
-      setGuestCounts((prev) => {
-        const next = { ...prev };
-        delete next[unit.id];
-        group.tableIds.forEach((id) => {
-          next[id] = 0;
-        });
-        return next;
+      releaseMerge.mutate(unit.id, {
+        onSuccess: () => {
+          if (selectedUnitId === unit.id) {
+            setSelectedUnitId(units.find((u) => u.kind === "table")?.id ?? null);
+          }
+          toast.success(`${unit.name} split into individual tables`);
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not release merge"),
       });
-      if (selectedUnitId === unit.id) {
-        setSelectedUnitId(units.find((u) => u.kind === "table")?.id ?? "");
-      }
-      toast.success(`${unit.name} split into individual tables`);
       return;
     }
 
@@ -772,40 +751,19 @@ function TableService() {
       return;
     }
 
-    const ids = [sourceTable.id, target.id];
-    const selectedTables = [sourceTable, target];
-    const id = `mg-${Date.now()}`;
-    const name = selectedTables.map((t) => t.name).join(" + ");
-    const groupGuests = selectedTables.reduce((sum, t) => sum + (guestCounts[t.id] ?? t.guests), 0);
-    const waiter = selectedTables.find((t) => t.waiter)?.waiter;
-
-    setMergeGroups((prev) => [
-      ...prev,
+    const name = [sourceTable.name, target.name].join(" + ");
+    mergeTables.mutate(
+      { tableIds: [sourceTable.id, target.id] },
       {
-        id,
-        name,
-        sectionId: sourceTable.sectionId,
-        tableIds: ids,
-        status: "active",
-        guests: groupGuests,
-        ...(waiter ? { waiter } : {}),
+        onSuccess: () => {
+          setSelectedUnitId(null);
+          setMergeDialog({ open: false, source: null });
+          setMergeTarget("");
+          toast.success(`${name} merged into one unit`);
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not merge tables"),
       },
-    ]);
-    setTables((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, mergeGroupId: id } : t)));
-    setGuestCounts((prev) => {
-      const next = { ...prev };
-      let sum = 0;
-      ids.forEach((tableId) => {
-        sum += next[tableId] ?? 0;
-        next[tableId] = 0;
-      });
-      next[id] = sum;
-      return next;
-    });
-    setSelectedUnitId(id);
-    setMergeDialog({ open: false, source: null });
-    setMergeTarget("");
-    toast.success(`${name} merged into one unit`);
+    );
   };
 
   const handleTransferFromDialog = () => {
@@ -837,40 +795,24 @@ function TableService() {
       return;
     }
 
-    const sourceGuests = guestCounts[sourceTable.id] ?? sourceTable.guests;
-
-    setTables((prev) =>
-      prev.map((t) => {
-        if (t.id === sourceTable.id) {
-          const { waiter: _w, ...rest } = t;
-          return { ...rest, status: "available", guests: 0 } as RTable;
-        }
-        if (t.id === dest.id) {
-          return {
-            ...t,
-            status: sourceTable.status,
-            guests: sourceGuests,
-            ...(sourceTable.waiter ? { waiter: sourceTable.waiter } : {}),
-          };
-        }
-        return t;
-      }),
+    moveTable.mutate(
+      { from: sourceTable.id, to: dest.id },
+      {
+        onSuccess: () => {
+          setSelectedUnitId(dest.id);
+          setTransferDialog({ open: false, source: null });
+          setTransferTarget("");
+          toast.success(`Moved booking to ${dest.name}`);
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not transfer booking"),
+      },
     );
-    setGuestCounts((prev) => ({
-      ...prev,
-      [sourceTable.id]: 0,
-      [dest.id]: sourceGuests,
-    }));
-    setSelectedUnitId(dest.id);
-    setTransferDialog({ open: false, source: null });
-    setTransferTarget("");
-    toast.success(`Moved booking to ${dest.name}`);
   };
 
   const subtotal = lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
   const pendingCount = lines.filter((l) => l.status === "pending").length;
   const sectionName = selectedUnit
-    ? SECTIONS.find((s) => s.id === selectedUnit.sectionId)?.name
+    ? sections.find((s) => s.id === selectedUnit.sectionId)?.name
     : "";
 
   const mergeTargets = mergeDialog.source
@@ -907,11 +849,13 @@ function TableService() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Sections</SelectItem>
-              {SECTIONS.filter((s) => s.type === "dine-in").map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
+              {sections
+                .filter((s) => s.type === "dine-in")
+                .map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
           <Button variant="ghost" size="icon" className="size-8" aria-label="Refresh">
@@ -924,9 +868,9 @@ function TableService() {
               <UnitCard
                 key={u.id}
                 unit={u}
-                orderCount={orders[u.id]?.length ?? 0}
+                orderCount={orderMap[u.id]?.lines.length ?? 0}
                 cookingCount={
-                  (orders[u.id] ?? []).filter((l) => l.status === "sent-to-kitchen").length
+                  (orderMap[u.id]?.lines ?? []).filter((l) => l.status === "sent-to-kitchen").length
                 }
                 active={u.id === selectedUnitId}
                 canMerge={canMerge(u)}
@@ -960,11 +904,7 @@ function TableService() {
           />
         </div>
         <div className="flex gap-2 overflow-x-auto pb-2">
-          {[
-            { id: "all", name: "All Items" },
-            { id: "favorites", name: "Favorites" },
-            ...CATEGORIES,
-          ].map((c) => (
+          {categories.map((c) => (
             <button
               key={c.id}
               onClick={() => setCategory(c.id)}
@@ -982,7 +922,7 @@ function TableService() {
         <ScrollArea className="flex-1">
           <div className="grid gap-2 pr-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {items.map((item) => {
-              const out = item.status === "unavailable" || !!stockOut[item.id];
+              const out = item.status === "unavailable" || !!item.outOfStock;
               return (
                 <button
                   key={item.id}
@@ -1002,9 +942,9 @@ function TableService() {
                         {item.spicy && <span className="ml-1 text-xs">🌶️</span>}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {item.variants.length > 0
-                          ? `${item.variants.length} variant${item.variants.length > 1 ? "s" : ""}`
-                          : inr(item.price, false)}
+                        {(item.variants?.length ?? 0) > 0
+                          ? `${item.variants!.length} variant${item.variants!.length > 1 ? "s" : ""}`
+                          : inr(item.basePrice, false)}
                       </p>
                     </div>
                   </div>
@@ -1038,12 +978,13 @@ function TableService() {
                     variant="outline"
                     size="icon"
                     className="size-7"
-                    onClick={() =>
-                      setGuestCounts((g) => ({
-                        ...g,
-                        [selectedUnit.id]: Math.max(0, (g[selectedUnit.id] ?? 0) - 1),
-                      }))
-                    }
+                    onClick={() => {
+                      if (selectedUnit.kind !== "table") return;
+                      seatTable.mutate({
+                        id: selectedUnit.id,
+                        guests: Math.max(0, selectedUnit.guests - 1),
+                      });
+                    }}
                     aria-label="Decrease guests"
                   >
                     <Minus className="size-3" />
@@ -1055,12 +996,13 @@ function TableService() {
                     variant="outline"
                     size="icon"
                     className="size-7"
-                    onClick={() =>
-                      setGuestCounts((g) => ({
-                        ...g,
-                        [selectedUnit.id]: (g[selectedUnit.id] ?? 0) + 1,
-                      }))
-                    }
+                    onClick={() => {
+                      if (selectedUnit.kind !== "table") return;
+                      seatTable.mutate({
+                        id: selectedUnit.id,
+                        guests: selectedUnit.guests + 1,
+                      });
+                    }}
                     aria-label="Increase guests"
                   >
                     <Plus className="size-3" />
@@ -1080,7 +1022,7 @@ function TableService() {
                   </p>
                 )}
                 {lines.map((l) => {
-                  const meta = orderStatusMeta[l.status];
+                  const meta = orderStatusMeta[l.status ?? ""] ?? { label: l.status ?? "", className: "bg-muted text-muted-foreground" };
                   return (
                     <div
                       key={l.id}
@@ -1198,19 +1140,19 @@ function TableService() {
           <DialogHeader>
             <DialogTitle>{selectedItem?.name}</DialogTitle>
             <DialogDescription>
-              {selectedItem && selectedItem.variants.length > 0
+              {selectedItem && (selectedItem.variants?.length ?? 0) > 0
                 ? "Choose a size/variant and quantity to add to the order."
                 : "Choose a quantity to add to the order."}
             </DialogDescription>
           </DialogHeader>
 
-          {selectedItem && selectedItem.variants.length > 0 && (
+          {selectedItem && (selectedItem.variants?.length ?? 0) > 0 && (
             <RadioGroup
               value={selectedVariant ?? ""}
               onValueChange={setSelectedVariant}
               className="gap-2"
             >
-              {selectedItem.variants.map((v) => {
+              {selectedItem.variants!.map((v) => {
                 const id = `${selectedItem.id}-${v.name}`;
                 return (
                   <label
@@ -1282,12 +1224,12 @@ function TableService() {
               className="w-full sm:w-auto"
               disabled={
                 !selectedItem ||
-                (selectedItem.variants.length > 0 && (!activeVariant || !activeVariant.available))
+                ((selectedItem.variants?.length ?? 0) > 0 && (!activeVariant || !activeVariant.available))
               }
               onClick={() => selectedItem && addVariant(selectedItem, selectedVariant ?? undefined)}
             >
               Add {pendingQty} to order ·{" "}
-              {inr(pendingQty * (activeVariant?.price ?? selectedItem?.price ?? 0), false)}
+              {inr(pendingQty * (activeVariant?.price ?? selectedItem?.basePrice ?? 0), false)}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -84,7 +84,7 @@ export default async function tableRoutes(app: FastifyInstance) {
   );
 
   const SeatBody = z.object({
-    guests: z.number().int().min(1),
+    guests: z.number().int().min(0),
     waiterId: z.string().uuid().optional(),
   });
 
@@ -97,8 +97,7 @@ export default async function tableRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: body.error.message });
       }
       try {
-        const table = await tables.seatTable({ tableId, ...body.data });
-        return table;
+        return await tables.seatTable({ tableId, ...body.data });
       } catch (err: any) {
         return reply.status(409).send({ error: err.message });
       }

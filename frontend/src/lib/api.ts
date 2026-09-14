@@ -210,12 +210,14 @@ export type OrderLine = {
   batch?: number | null;
   note?: string | null;
   status?: string | null;
+  kitchenStatus?: string | null;
   served: boolean;
   mrp: boolean;
 };
 
 export type OrderUnit = {
   id: string;
+  orderId?: string;
   name: string;
   sectionId?: string | null;
   sectionName?: string;
@@ -342,7 +344,10 @@ export const api = {
         splitGroups: TableSplitGroup[];
       }>,
     seat: (id: string, guests: number, waiterId?: string) =>
-      post(`/tables/${encodeURIComponent(id)}/seat`, { guests, ...(waiterId ? { waiterId } : {}) }) as Promise<Table>,
+      post(`/tables/${encodeURIComponent(id)}/seat`, { guests, ...(waiterId ? { waiterId } : {}) }) as Promise<{
+        table: Table;
+        order: { id: string } | null;
+      }>,
     requestBill: (id: string) =>
       post(`/tables/${encodeURIComponent(id)}/request-bill`) as Promise<Table>,
     needsCleaning: (id: string) =>
@@ -379,10 +384,24 @@ export const api = {
       get(`/orders/active?outlet=${encodeURIComponent(outlet)}`) as Promise<{
         units: OrderUnit[];
       }>,
+    addItems: (
+      orderId: string,
+      items: { menuItemId: string; variantId?: string; qty: number; note?: string }[]
+    ) =>
+      post(`/orders/${encodeURIComponent(orderId)}/items`, { items }) as Promise<{
+        order: { id: string };
+        items: OrderLine[];
+      }>,
+    sendToKitchen: (orderId: string, createdBy: string) =>
+      post(`/orders/${encodeURIComponent(orderId)}/send-to-kitchen`, { createdBy }) as Promise<unknown>,
   },
   orderItems: {
     serve: (id: string) =>
       post(`/order-items/${encodeURIComponent(id)}/served`) as Promise<unknown>,
+    updateNote: (id: string, note: string) =>
+      put(`/order-items/${encodeURIComponent(id)}/note`, { note }) as Promise<unknown>,
+    cancel: (id: string) =>
+      post(`/order-items/${encodeURIComponent(id)}/cancel`) as Promise<unknown>,
   },
   notifications: {
     list: (outletId: string) =>

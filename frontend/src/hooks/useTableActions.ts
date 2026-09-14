@@ -4,12 +4,14 @@ import { api } from "@/lib/api";
 const OUTLET = "SHADAB";
 const TABLES = ["tables", OUTLET];
 const GROUPS = ["tableGroups", OUTLET];
+const ORDERS = ["orders", "active", OUTLET];
 
 function useInvalidate() {
   const client = useQueryClient();
   return () => {
     client.invalidateQueries({ queryKey: TABLES });
     client.invalidateQueries({ queryKey: GROUPS });
+    client.invalidateQueries({ queryKey: ORDERS });
   };
 }
 

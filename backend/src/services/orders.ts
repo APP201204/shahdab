@@ -321,16 +321,25 @@ export async function getActiveOrderUnits({ outletId }: { outletId: string }) {
     const group = order.mergeGroupId ? groupById.get(order.mergeGroupId) : undefined;
     const name = table?.name ?? group?.name ?? "Unknown";
     const sectionId = table?.sectionId ?? group?.sectionId;
-    const waiterId = table?.waiterId;
+    const waiterId = table?.waiterId ?? group?.waiterId;
     const unit = {
       id: order.mergeGroupId ?? order.tableId ?? order.id,
+      orderId: order.id,
       name,
       sectionId,
-      sectionName: sectionById.get(sectionId) ?? "",
+      sectionName: sectionId ? (sectionById.get(sectionId) ?? "") : "",
       waiter: waiterId ? staffById.get(waiterId) : undefined,
       lines: [] as any[],
     };
-    for (const item of items.filter((i) => i.orderId === order.id && i.tableStatus !== "cancelled")) {
+    for (const item of items.filter((i) => i.orderId === order.id)) {
+      let status = "pending";
+      if (item.tableStatus === "cancelled") {
+        status = "cancelled";
+      } else if (item.tableStatus === "on-table" || item.servedAt !== null) {
+        status = "on-table";
+      } else if (item.kitchenStatus) {
+        status = "sent-to-kitchen";
+      }
       unit.lines.push({
         id: item.id,
         orderId: order.id,
@@ -343,6 +352,8 @@ export async function getActiveOrderUnits({ outletId }: { outletId: string }) {
         note: item.note,
         served: item.tableStatus === "on-table" || item.servedAt !== null,
         mrp: item.mrp,
+        status,
+        kitchenStatus: item.kitchenStatus,
       });
     }
     units.push(unit);
