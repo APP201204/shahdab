@@ -1,12 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Settings, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { useAppState } from "@/lib/app-state";
 import {
   Select,
   SelectContent,
@@ -14,8 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CATEGORIES, MENU_ITEMS, SECTIONS, type OrderLine } from "@/data/seed";
+import { type OrderLine } from "@/data/seed";
 import { inr } from "@/lib/format";
+import { useMenu } from "@/hooks/useMenu";
+import { useSections } from "@/hooks/useSections";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/quick-order")({
@@ -46,15 +47,31 @@ type Draft = {
   sent: boolean;
 };
 
+const OUTLET = "SHADAB";
+
 function QuickOrder() {
-  const { stockOut, notify } = useAppState();
-  const [section, setSection] = useState("ac-takeaway");
+  const { data: menuData } = useMenu(OUTLET);
+  const { data: sectionsData } = useSections(OUTLET);
+  const [section, setSection] = useState("");
   const [category, setCategory] = useState("favorites");
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [activeDraft, setActiveDraft] = useState<string | null>(null);
 
+  const takeawaySections =
+    sectionsData?.sections.filter((s) => s.type === "takeaway") ?? [];
+  const defaultSection = takeawaySections[0]?.id ?? "";
+
+  useEffect(() => {
+    if (!section && defaultSection) {
+      setSection(defaultSection);
+    }
+  }, [defaultSection]);
+
+  const allItems = menuData?.categories.flatMap((c) => c.items) ?? [];
+  const categories = [{ id: "favorites", name: "Favorites" }, ...(menuData?.categories ?? [])];
+
   const draft = drafts.find((d) => d.id === activeDraft) ?? null;
-  const items = MENU_ITEMS.filter((i) => i.status === "available" && !stockOut[i.id]).filter((i) =>
+  const items = allItems.filter((i) =>
     category === "favorites" ? i.favorite : i.categoryId === category,
   );
 
@@ -73,8 +90,9 @@ function QuickOrder() {
 
   const addItem = (itemId: string) => {
     if (!draft) return;
-    const item = MENU_ITEMS.find((i) => i.id === itemId)!;
-    const variant = item.variants[0];
+    const item = allItems.find((i) => i.id === itemId);
+    if (!item) return;
+    const variant = item.variants?.[0];
     setDrafts((prev) =>
       prev.map((d) => {
         if (d.id !== draft.id) return d;
@@ -85,7 +103,7 @@ function QuickOrder() {
           itemId: item.id,
           name: item.name,
           qty: 1,
-          unitPrice: variant ? variant.price : item.price,
+          unitPrice: variant ? variant.price : item.basePrice,
           status: "on-table",
           ...(variant ? { variant: variant.name } : {}),
         };
@@ -109,7 +127,7 @@ function QuickOrder() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {SECTIONS.filter((s) => s.type === "takeaway").map((s) => (
+            {takeawaySections.map((s) => (
               <SelectItem key={s.id} value={s.id}>
                 {s.name}
               </SelectItem>
@@ -118,7 +136,7 @@ function QuickOrder() {
         </Select>
         <ScrollArea className="flex-1">
           <div className="space-y-1 pr-2">
-            {[{ id: "favorites", name: "Favorites" }, ...CATEGORIES].map((c) => (
+            {categories.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setCategory(c.id)}
@@ -173,7 +191,7 @@ function QuickOrder() {
           <h2 className="text-sm font-semibold capitalize">
             {category === "favorites"
               ? "Favorites"
-              : CATEGORIES.find((c) => c.id === category)?.name}
+              : categories.find((c) => c.id === category)?.name}
           </h2>
           <ScrollArea className="flex-1">
             <div className="grid gap-2 pr-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -188,7 +206,7 @@ function QuickOrder() {
                       {item.spicy && <span className="ml-1 text-xs">🌶️</span>}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {inr(item.variants[0]?.price ?? item.price, false)}
+                      {inr(item.variants?.[0]?.price ?? item.basePrice, false)}
                     </p>
                   </div>
                   <Button
@@ -284,7 +302,6 @@ function QuickOrder() {
                     setDrafts((prev) =>
                       prev.map((d) => (d.id === draft.id ? { ...d, sent: true } : d)),
                     );
-                    notify(`Takeaway order sent to kitchen — ${draft.customer} (${draft.phone})`);
                     toast.success(`Sent to kitchen — ticket queued for ${draft.customer}`);
                   }}
                 >
@@ -297,7 +314,6 @@ function QuickOrder() {
                   onClick={() => {
                     setDrafts((prev) => prev.filter((d) => d.id !== draft.id));
                     setActiveDraft(null);
-                    notify(`Takeaway order picked up — ${draft.customer}`);
                     toast.success(`Picked up — hand bill to cashier counter`);
                   }}
                 >
