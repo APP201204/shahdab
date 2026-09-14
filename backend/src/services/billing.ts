@@ -79,6 +79,28 @@ export async function getBillQueue({
 
   const [tables, groups] = await Promise.all([tableQuery, mergeQuery]);
 
+  const orderIds = [...tables, ...groups]
+    .map((x) => (x as any).order?.id)
+    .filter(Boolean) as string[];
+
+  const [items, allStaff] = await Promise.all([
+    orderIds.length
+      ? db.select().from(schema.orderItems).where(inArray(schema.orderItems.orderId, orderIds))
+      : Promise.resolve([]),
+    db.select().from(schema.staff),
+  ]);
+
+  const staffById = new Map(allStaff.map((s) => [s.id, s.name]));
+  const itemsByOrder = new Map<string, any[]>();
+  for (const item of items) {
+    const list = itemsByOrder.get(item.orderId) ?? [];
+    list.push({
+      ...item,
+      status: item.kitchenStatus,
+    });
+    itemsByOrder.set(item.orderId, list);
+  }
+
   const queue: any[] = [];
   for (const t of tables) {
     if (t.table.status === "bill-requested" || (t.order && statusConditions.includes(t.order.status))) {
@@ -86,8 +108,13 @@ export async function getBillQueue({
         type: "table",
         unitId: t.table.id,
         unitName: t.table.name,
-        table: t.table,
+        sectionId: t.table.sectionId,
+        requested: t.table.status === "bill-requested",
+        waiter: t.table.waiterId ? staffById.get(t.table.waiterId) : undefined,
+        guests: t.table.guests,
+        startedAt: t.table.startedAt,
         order: t.order,
+        items: t.order ? (itemsByOrder.get(t.order.id) ?? []) : [],
       });
     }
   }
@@ -97,8 +124,12 @@ export async function getBillQueue({
         type: "merge",
         unitId: g.group.id,
         unitName: g.group.name,
-        group: g.group,
+        sectionId: g.group.sectionId,
+        requested: true,
+        waiter: g.group.waiterId ? staffById.get(g.group.waiterId) : undefined,
+        guests: g.group.guests,
         order: g.order,
+        items: itemsByOrder.get(g.order.id) ?? [],
       });
     }
   }
@@ -142,7 +173,7 @@ export async function previewBill({
   return {
     order,
     items,
-    discount,
+    discountInput: discount,
     serviceChargeRate,
     taxRates,
     ...totals,

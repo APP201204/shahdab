@@ -96,6 +96,33 @@ export type Bill = {
   payments: Payment[];
 };
 
+export type BillingQueueItem = {
+  type: "table" | "merge";
+  unitId: string;
+  unitName: string;
+  sectionId: string;
+  requested: boolean;
+  waiter?: string;
+  guests: number;
+  startedAt?: string | null;
+  order: { id: string; status: string } | null;
+  items: OrderLine[];
+};
+
+export type BillPreview = {
+  order: { id: string; status: string };
+  items: OrderLine[];
+  discountInput: { kind: "flat" | "percent"; value: number };
+  serviceChargeRate: number;
+  taxRates: { cgst: number; sgst: number };
+  subtotal: number;
+  discount: number;
+  tax: number;
+  serviceCharge: number;
+  total: number;
+  rounding: number;
+};
+
 export type Section = {
   id: string;
   outletId: string;
@@ -182,6 +209,7 @@ export type OrderLine = {
   unitPrice: number;
   batch?: number | null;
   note?: string | null;
+  status?: string | null;
   served: boolean;
   mrp: boolean;
 };
@@ -289,6 +317,19 @@ export const api = {
     list: (outlet: string) =>
       get(`/bills?outlet=${encodeURIComponent(outlet)}`) as Promise<{ bills: Bill[] }>,
     get: (id: string) => get(`/bills/${encodeURIComponent(id)}`) as Promise<Bill>,
+  },
+  billing: {
+    queue: (outlet: string) =>
+      get(`/billing/queue?outlet=${encodeURIComponent(outlet)}`) as Promise<{ queue: BillingQueueItem[] }>,
+    preview: (orderId: string, discount?: { kind: "flat" | "percent"; value: number }) =>
+      post("/billing/preview", { orderId, discount: discount ?? { kind: "flat", value: 0 } }) as Promise<BillPreview>,
+    close: (body: {
+      orderId: string;
+      payments: { method: PaymentMethod; amount: number }[];
+      cashierId: string;
+      customer?: string;
+      discount?: { kind: "flat" | "percent"; value: number };
+    }) => post("/bills", body) as Promise<Bill>,
   },
   tables: {
     list: (outlet: string) =>
