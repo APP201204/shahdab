@@ -14,7 +14,6 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { TopBar } from "@/components/layout/top-bar";
 import { SideNav } from "@/components/layout/side-nav";
 import { Toaster } from "@/components/ui/sonner";
-import { AppStateProvider } from "@/lib/app-state";
 
 function NotFoundComponent() {
   return (
@@ -123,19 +122,17 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AppStateProvider>
-        <div className="min-h-screen bg-background">
-          <TopBar />
-          <div className="flex">
-            <SideNav />
-            <main className="min-w-0 flex-1">
-              {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-              <Outlet />
-            </main>
-          </div>
-          <Toaster />
+      <div className="min-h-screen bg-background">
+        <TopBar />
+        <div className="flex">
+          <SideNav />
+          <main className="min-w-0 flex-1">
+            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+            <Outlet />
+          </main>
         </div>
-      </AppStateProvider>
+        <Toaster />
+      </div>
     </QueryClientProvider>
   );
 }
