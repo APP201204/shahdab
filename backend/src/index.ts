@@ -9,6 +9,7 @@ import menuRoutes from "./routes/menu.ts";
 import tableRoutes from "./routes/tables.ts";
 import staffRoutes from "./routes/staff.ts";
 import reservationRoutes from "./routes/reservations.ts";
+import orderRoutes from "./routes/orders.ts";
 
 const app = Fastify({ logger: true });
 
@@ -23,6 +24,7 @@ await app.register(menuRoutes, { prefix: "/api/v1" });
 await app.register(tableRoutes, { prefix: "/api/v1" });
 await app.register(staffRoutes, { prefix: "/api/v1" });
 await app.register(reservationRoutes, { prefix: "/api/v1" });
+await app.register(orderRoutes, { prefix: "/api/v1" });
 
 await app.ready();
 
@@ -38,11 +40,13 @@ io.on("connection", (socket) => {
   const outletId = socket.handshake.query.outletId as string | undefined;
   const role = socket.handshake.query.role as string | undefined;
   const staffId = socket.handshake.query.staffId as string | undefined;
+  const kitchenId = socket.handshake.query.kitchenId as string | undefined;
 
   if (outletId) {
     socket.join(`outlet:${outletId}`);
     socket.join(`outlet:${outletId}:tables`);
     socket.join(`outlet:${outletId}:reservations`);
+    if (kitchenId) socket.join(`outlet:${outletId}:kitchen:${kitchenId}`);
     if (role === "cashier") socket.join(`outlet:${outletId}:billing`);
     if (staffId) socket.join(`waiter:${staffId}`);
   }

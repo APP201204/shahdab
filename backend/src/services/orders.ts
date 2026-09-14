@@ -1,0 +1,288 @@
+import { eq, and, inArray, isNull, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { db } from "../db/index.ts";
+import * as schema from "../db/schema.ts";
+import { emitKitchenTicket } from "./events.ts";
+
+async function updateOrderStatus(orderId: string, tx: any) {
+  const items = await tx
+    .select()
+    .from(schema.orderItems)
+    .where(eq(schema.orderItems.orderId, orderId));
+  const total = items.length;
+  const onTable = items.filter((i: any) => i.tableStatus === "on-table").length;
+  const pending = items.filter((i: any) => i.tableStatus === "pending").length;
+  const cancelled = items.filter((i: any) => i.tableStatus === "cancelled").length;
+
+  let status = "open" as "open" | "partially-served" | "fully-served";
+  if (total === 0 || (onTable === 0 && pending > 0)) {
+    status = "open";
+  } else if (onTable + cancelled === total) {
+    status = "fully-served";
+  } else if (onTable > 0) {
+    status = "partially-served";
+  }
+
+  await tx
+    .update(schema.orders)
+    .set({ status })
+    .where(eq(schema.orders.id, orderId));
+}
+
+export async function getOrderByUnit({
+  tableId,
+  mergeGroupId,
+}: {
+  tableId?: string;
+  mergeGroupId?: string;
+}) {
+  if (!tableId && !mergeGroupId) {
+    throw new Error("tableId or mergeGroupId is required");
+  }
+
+  const conditions = [];
+  if (tableId) conditions.push(eq(schema.orders.tableId, tableId));
+  if (mergeGroupId) conditions.push(eq(schema.orders.mergeGroupId, mergeGroupId));
+
+  const [order] = await db
+    .select()
+    .from(schema.orders)
+    .where(and(...conditions))
+    .orderBy(schema.orders.createdAt)
+    .limit(1);
+
+  if (!order) return null;
+
+  const items = await db
+    .select()
+    .from(schema.orderItems)
+    .where(eq(schema.orderItems.orderId, order.id));
+  const batches = await db
+    .select()
+    .from(schema.kotBatches)
+    .where(eq(schema.kotBatches.orderId, order.id));
+
+  return { ...order, items, batches };
+}
+
+export async function addOrderItems({
+  orderId,
+  items,
+}: {
+  orderId: string;
+  items: { menuItemId: string; variantId?: string; qty: number; note?: string }[];
+}) {
+  if (items.length === 0) throw new Error("no items to add");
+
+  return db.transaction(async (tx) => {
+    const [order] = await tx
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.id, orderId))
+      .for("update");
+    if (!order) throw new Error("order not found");
+    if (["closed", "billed"].includes(order.status)) {
+      throw new Error("order is closed");
+    }
+
+    const menuItemIds = items.map((i) => i.menuItemId);
+    const menuRows = await tx
+      .select()
+      .from(schema.menuItems)
+      .where(inArray(schema.menuItems.id, menuItemIds));
+    const menuMap = new Map(menuRows.map((m) => [m.id, m]));
+
+    const variantIds = items
+      .map((i) => i.variantId)
+      .filter((id): id is string => Boolean(id));
+    const variantRows = variantIds.length
+      ? await tx
+          .select()
+          .from(schema.menuItemVariants)
+          .where(inArray(schema.menuItemVariants.id, variantIds))
+      : [];
+    const variantMap = new Map(variantRows.map((v) => [v.id, v]));
+
+    const inserted: any[] = [];
+    for (const item of items) {
+      const menu = menuMap.get(item.menuItemId);
+      if (!menu) throw new Error("menu item not found");
+      const variant = item.variantId ? variantMap.get(item.variantId) : undefined;
+      if (item.variantId && !variant) throw new Error("variant not found");
+
+      const [row] = await tx
+        .insert(schema.orderItems)
+        .values({
+          id: randomUUID(),
+          orderId,
+          kitchenId: menu.kitchenId,
+          menuItemId: item.menuItemId,
+          variantId: item.variantId,
+          name: menu.name,
+          variant: variant?.name ?? null,
+          qty: item.qty,
+          unitPrice: variant ? variant.price : menu.basePrice,
+          tableStatus: "pending",
+          kitchenStatus: null,
+          mrp: menu.mrp,
+          note: item.note ?? null,
+        })
+        .returning();
+      inserted.push(row);
+    }
+
+    await updateOrderStatus(orderId, tx);
+    return { order, items: inserted };
+  });
+}
+
+export async function sendToKitchen({
+  orderId,
+  createdBy,
+}: {
+  orderId: string;
+  createdBy: string;
+}) {
+  return db.transaction(async (tx) => {
+    const [order] = await tx
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.id, orderId))
+      .for("update");
+    if (!order) throw new Error("order not found");
+
+    const batchRes = await tx
+      .select({ n: sql`max(${schema.kotBatches.batchNumber})` })
+      .from(schema.kotBatches)
+      .where(eq(schema.kotBatches.orderId, orderId));
+    const lastNumber = Number(batchRes[0]?.n) || 0;
+    const batchNumber = lastNumber + 1;
+
+    const [batch] = await tx
+      .insert(schema.kotBatches)
+      .values({
+        id: randomUUID(),
+        orderId,
+        batchNumber,
+        createdBy,
+      })
+      .returning();
+
+    const cartItems = await tx
+      .select()
+      .from(schema.orderItems)
+      .where(
+        and(
+          eq(schema.orderItems.orderId, orderId),
+          eq(schema.orderItems.tableStatus, "pending"),
+          isNull(schema.orderItems.kitchenStatus)
+        )
+      );
+
+    if (cartItems.length === 0) {
+      throw new Error("no cart items to send");
+    }
+
+    await tx
+      .update(schema.orderItems)
+      .set({
+        kotBatchId: batch.id,
+        kitchenStatus: "placed",
+      })
+      .where(
+        and(
+          eq(schema.orderItems.orderId, orderId),
+          eq(schema.orderItems.tableStatus, "pending"),
+          isNull(schema.orderItems.kitchenStatus)
+        )
+      );
+
+    const byKitchen = new Map<string, typeof cartItems>();
+    for (const item of cartItems) {
+      const list = byKitchen.get(item.kitchenId ?? "default") ?? [];
+      list.push(item);
+      byKitchen.set(item.kitchenId ?? "default", list);
+    }
+
+    for (const [kitchenId, ticketItems] of byKitchen.entries()) {
+      emitKitchenTicket(order.outletId, kitchenId, { batch, items: ticketItems });
+    }
+
+    await updateOrderStatus(orderId, tx);
+    return { ...batch, items: cartItems };
+  });
+}
+
+export async function updateItemNote({
+  orderItemId,
+  note,
+}: {
+  orderItemId: string;
+  note: string;
+}) {
+  return db.transaction(async (tx) => {
+    const [item] = await tx
+      .select()
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.id, orderItemId))
+      .for("update");
+    if (!item) throw new Error("order item not found");
+
+    const [updated] = await tx
+      .update(schema.orderItems)
+      .set({ note })
+      .where(eq(schema.orderItems.id, orderItemId))
+      .returning();
+    return updated;
+  });
+}
+
+export async function cancelItem({ orderItemId }: { orderItemId: string }) {
+  return db.transaction(async (tx) => {
+    const [item] = await tx
+      .select()
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.id, orderItemId))
+      .for("update");
+    if (!item) throw new Error("order item not found");
+
+    if (["cooking", "ready", "served"].includes(item.kitchenStatus ?? "")) {
+      throw new Error("item cannot be cancelled");
+    }
+
+    const [updated] = await tx
+      .update(schema.orderItems)
+      .set({ tableStatus: "cancelled", kitchenStatus: "cancelled" })
+      .where(eq(schema.orderItems.id, orderItemId))
+      .returning();
+    await updateOrderStatus(item.orderId, tx);
+    return updated;
+  });
+}
+
+export async function serveItem({ orderItemId }: { orderItemId: string }) {
+  return db.transaction(async (tx) => {
+    const [item] = await tx
+      .select()
+      .from(schema.orderItems)
+      .where(eq(schema.orderItems.id, orderItemId))
+      .for("update");
+    if (!item) throw new Error("order item not found");
+
+    if (["served", "cancelled"].includes(item.kitchenStatus ?? "")) {
+      throw new Error("item cannot be served");
+    }
+
+    const [updated] = await tx
+      .update(schema.orderItems)
+      .set({
+        kitchenStatus: "served",
+        tableStatus: "on-table",
+        servedAt: new Date(),
+      })
+      .where(eq(schema.orderItems.id, orderItemId))
+      .returning();
+    await updateOrderStatus(item.orderId, tx);
+    return updated;
+  });
+}
