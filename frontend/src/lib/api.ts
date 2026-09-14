@@ -293,6 +293,8 @@ export const api = {
   tables: {
     list: (outlet: string) =>
       get(`/tables?outlet=${encodeURIComponent(outlet)}`) as Promise<{ tables: Table[] }>,
+    update: (id: string, body: { number?: number; capacity?: number; name?: string }) =>
+      put(`/tables/${encodeURIComponent(id)}`, body) as Promise<Table>,
     groups: (outlet: string) =>
       get(`/tables/groups?outlet=${encodeURIComponent(outlet)}`) as Promise<{
         mergeGroups: TableMergeGroup[];
@@ -308,8 +310,8 @@ export const api = {
       post(`/tables/${encodeURIComponent(id)}/mark-cleaned`) as Promise<Table>,
     move: (id: string, toTableId: string) =>
       post(`/tables/${encodeURIComponent(id)}/move`, { toTableId }) as Promise<{ from: Table; to: Table }>,
-    merge: (tableIds: string[], body?: { guests?: number; waiterId?: string; name?: string }) =>
-      post("/table-merges", { tableIds, ...body }) as Promise<unknown>,
+    merge: (body: { tableIds: string[]; guests?: number; waiterId?: string; name?: string }) =>
+      post("/table-merges", body) as Promise<unknown>,
     releaseMerge: (id: string) =>
       post(`/table-merges/${encodeURIComponent(id)}/release`) as Promise<unknown>,
     split: (tableId: string, subTables: { capacity: number; name?: string }[]) =>

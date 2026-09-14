@@ -62,6 +62,27 @@ export default async function tableRoutes(app: FastifyInstance) {
     }
   });
 
+  const UpdateTableBody = z.object({
+    number: z.number().int().min(1).optional(),
+    capacity: z.number().int().min(1).optional(),
+    name: z.string().optional(),
+  });
+
+  app.put<{ Params: { tableId: string }; Body: z.infer<typeof UpdateTableBody> }>(
+    "/tables/:tableId",
+    async (request, reply) => {
+      const body = UpdateTableBody.safeParse(request.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: body.error.message });
+      }
+      try {
+        return await tables.updateTable({ tableId: request.params.tableId, ...body.data });
+      } catch (err: any) {
+        return reply.status(409).send({ error: err.message });
+      }
+    }
+  );
+
   const SeatBody = z.object({
     guests: z.number().int().min(1),
     waiterId: z.string().uuid().optional(),

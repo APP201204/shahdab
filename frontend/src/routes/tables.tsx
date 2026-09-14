@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { MoreVertical } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,16 +20,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTables } from "@/hooks/useTables";
+import { useTableGroups } from "@/hooks/useTableGroups";
+import { useSections } from "@/hooks/useSections";
+import { useStaff } from "@/hooks/useStaff";
 import {
-  SECTIONS,
-  type RTable,
-  type TableMergeGroup,
-  type TableSplitGroup,
-  type TableStatus,
-} from "@/data/seed";
+  useSeatTable,
+  useMarkCleaned,
+  useNeedsCleaning,
+  useRequestBill,
+  useMergeTables,
+  useReleaseMerge,
+  useSplitTable,
+  useUnsplitTable,
+  useMoveTable,
+  useUpdateTable,
+} from "@/hooks/useTableActions";
 import { cn } from "@/lib/utils";
-import { useAppState } from "@/lib/app-state";
 import { toast } from "sonner";
+import { Table, TableMergeGroup, TableSplitGroup } from "@/lib/api";
 
 export const Route = createFileRoute("/tables")({
   head: () => ({
@@ -48,6 +57,8 @@ export const Route = createFileRoute("/tables")({
   }),
   component: TableManagement,
 });
+
+type TableStatus = Table["status"];
 
 const statusStyles: Record<TableStatus, string> = {
   available: "bg-success-soft text-success",
@@ -69,7 +80,9 @@ const statusLabel: Record<TableStatus, string> = {
 
 const SUFFIXES = ["a", "b", "c"];
 
-function defaultCapacities(table: RTable, count: number) {
+const OUTLET = "SHADAB";
+
+function defaultCapacities(table: Table, count: number) {
   const base = Math.floor(table.capacity / count);
   const caps = Array(count).fill(base);
   const remainder = table.capacity - base * count;
@@ -90,24 +103,23 @@ function defaultCapacities(table: RTable, count: number) {
 }
 
 type Unit =
-  { kind: "table"; table: RTable } | { kind: "group"; group: TableMergeGroup; tables: RTable[] };
+  | { kind: "table"; table: Table }
+  | { kind: "group"; group: TableMergeGroup; tables: Table[] };
 
 function TableManagement() {
-  const {
-    tables,
-    setTables,
-    mergeGroups,
-    setMergeGroups,
-    splitGroups,
-    setSplitGroups,
-    orders,
-    setOrders,
-    guestCounts,
-    setGuestCounts,
-    notify,
-  } = useAppState();
+  const { data: tablesData } = useTables(OUTLET);
+  const { data: groupsData } = useTableGroups(OUTLET);
+  const { data: sectionsData } = useSections(OUTLET);
+  const { data: staffData } = useStaff(OUTLET);
+
+  const tables = tablesData?.tables ?? [];
+  const mergeGroups = groupsData?.mergeGroups ?? [];
+  const splitGroups = groupsData?.splitGroups ?? [];
+  const sections = sectionsData?.sections ?? [];
+  const staff = staffData?.staff ?? [];
+
   const [sectionId, setSectionId] = useState("dine-in");
-  const [editing, setEditing] = useState<RTable | null>(null);
+  const [editing, setEditing] = useState<Table | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
   const [selectedForMerge, setSelectedForMerge] = useState<string[]>([]);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -115,25 +127,23 @@ function TableManagement() {
   const [transferDest, setTransferDest] = useState("");
   const [splitDialog, setSplitDialog] = useState<{
     open: boolean;
-    table: RTable | null;
+    table: Table | null;
     count: 2 | 3;
     capacities: number[];
   }>({ open: false, table: null, count: 2, capacities: [0, 0] });
 
-  const sectionName = SECTIONS.find((s) => s.id === sectionId)!.name;
+  const section = sections.find((s) => s.id === sectionId);
+  const sectionName = section?.name ?? "";
+  const sectionColor = section?.color;
 
-  const hasActiveOrder = useCallback(
-    (unitId: string) => (orders[unitId]?.length ?? 0) > 0,
-    [orders],
-  );
+  const tableById = useMemo(() => new Map(tables.map((t) => [t.id, t])), [tables]);
+  const splitById = useMemo(() => new Map(splitGroups.map((g) => [g.id, g])), [splitGroups]);
 
-  const isSplitTable = (t: RTable) => t.splitGroupId && !t.parentTableId;
-  const isSubTable = (t: RTable) => !!t.parentTableId;
+  const isSplitTable = (t: Table) => t.splitGroupId && !t.parentTableId;
+  const isSubTable = (t: Table) => !!t.parentTableId;
 
   const visibleUnits = useMemo<Unit[]>(() => {
-    const activeGroups = mergeGroups.filter(
-      (g) => g.status === "active" && g.sectionId === sectionId,
-    );
+    const activeGroups = mergeGroups.filter((g) => g.status === "active" && g.sectionId === sectionId);
     const visibleTables = tables.filter(
       (t) => t.sectionId === sectionId && !t.mergeGroupId && !isSplitTable(t),
     );
@@ -142,7 +152,7 @@ function TableManagement() {
       units.push({
         kind: "group",
         group: g,
-        tables: tables.filter((t) => g.tableIds.includes(t.id)),
+        tables: g.tableIds.map((id) => tableById.get(id)).filter(Boolean) as Table[],
       });
     });
     const sortKey = (u: Unit) => {
@@ -154,132 +164,72 @@ function TableManagement() {
       return minNumber * 100;
     };
     return units.sort((a, b) => sortKey(a) - sortKey(b));
-  }, [tables, mergeGroups, sectionId]);
+  }, [tables, mergeGroups, sectionId, tableById]);
 
   const stats = useMemo(() => {
     const total = visibleUnits.length;
     const occupied = visibleUnits.filter((u) => {
       if (u.kind === "table") {
-        const guests = guestCounts[u.table.id] ?? u.table.guests;
-        return guests > 0 || hasActiveOrder(u.table.id);
+        return u.table.guests > 0 || u.table.status === "occupied" || u.table.status === "bill-requested";
       }
-      const guests = guestCounts[u.group.id] ?? u.group.guests;
-      return guests > 0 || hasActiveOrder(u.group.id);
+      return u.group.guests > 0 || u.tables.some((t) => t.status !== "available" && t.status !== "reserved");
     }).length;
     return { total, occupied, vacant: total - occupied };
-  }, [visibleUnits, guestCounts, hasActiveOrder]);
+  }, [visibleUnits]);
+
+  const seat = useSeatTable();
+  const markCleaned = useMarkCleaned();
+  const needsCleaning = useNeedsCleaning();
+  const requestBill = useRequestBill();
+  const merge = useMergeTables();
+  const releaseMerge = useReleaseMerge();
+  const split = useSplitTable();
+  const unsplit = useUnsplitTable();
+  const move = useMoveTable();
+  const updateTable = useUpdateTable();
 
   const setStatus = (id: string, status: TableStatus) => {
-    const guests = status === "occupied" ? 2 : status === "available" ? 0 : undefined;
-    setTables((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, status, ...(guests !== undefined ? { guests } : {}) } : t,
-      ),
-    );
-    if (guests !== undefined) setGuestCounts((prev) => ({ ...prev, [id]: guests }));
+    const table = tableById.get(id);
+    if (!table) return;
+    if (status === "occupied") {
+      seat.mutate({ id, guests: 2 }, { onError: (err: any) => toast.error(err?.message ?? "Could not seat") });
+    } else if (status === "available") {
+      markCleaned.mutate(id, { onError: (err: any) => toast.error(err?.message ?? "Could not release") });
+    } else if (status === "needs-cleaning") {
+      needsCleaning.mutate(id, { onError: (err: any) => toast.error(err?.message ?? "Could not send for cleaning") });
+    }
   };
 
-  const requestBill = (t: RTable) => {
-    setTables((prev) => prev.map((x) => (x.id === t.id ? { ...x, status: "bill-requested" } : x)));
-    notify(`Bill requested for ${t.name} — ${sectionName}`);
-    toast.success(`Bill requested for ${t.name} — cashier notified`);
+  const handleRequestBill = (t: Table) => {
+    requestBill.mutate(t.id, { onError: (err: any) => toast.error(err?.message ?? "Could not request bill") });
   };
 
   const handleMerge = () => {
-    const selectedTables = tables.filter((t) => selectedForMerge.includes(t.id));
-    if (selectedTables.length < 2) {
+    if (selectedForMerge.length < 2) {
       toast.error("Select at least 2 tables to merge");
       return;
     }
-
-    const section = selectedTables[0]!.sectionId;
-    if (selectedTables.some((t) => t.sectionId !== section)) {
-      toast.error("All selected tables must be in the same section");
-      return;
-    }
-
-    for (const t of selectedTables) {
-      if (t.mergeGroupId) {
-        toast.error(`${t.name} is already part of a merged group`);
-        return;
+    merge.mutate(
+      { tableIds: selectedForMerge },
+      {
+        onSuccess: () => {
+          setMergeMode(false);
+          setSelectedForMerge([]);
+          toast.success("Tables merged");
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not merge"),
       }
-      if (t.splitGroupId || t.parentTableId) {
-        toast.error(`${t.name} is already split or is a sub-table`);
-        return;
-      }
-      if (hasActiveOrder(t.id)) {
-        toast.error(`${t.name} has an active order — settle or close it before merging`);
-        return;
-      }
-    }
-
-    const id = `mg-${Date.now()}`;
-    const name = selectedTables.map((t) => t.name).join(" + ");
-    const groupGuests = selectedTables.reduce((sum, t) => sum + (guestCounts[t.id] ?? t.guests), 0);
-    const waiter = selectedTables.find((t) => t.waiter)?.waiter;
-
-    const group: TableMergeGroup = {
-      id,
-      name,
-      sectionId: section,
-      tableIds: selectedForMerge,
-      status: "active",
-      guests: groupGuests,
-      ...(waiter ? { waiter } : {}),
-    };
-
-    setMergeGroups((prev) => [...prev, group]);
-    setTables((prev) =>
-      prev.map((t) => (selectedForMerge.includes(t.id) ? { ...t, mergeGroupId: id } : t)),
     );
-    setGuestCounts((prev) => {
-      const next = { ...prev };
-      let sum = 0;
-      selectedForMerge.forEach((tableId) => {
-        sum += next[tableId] ?? 0;
-        next[tableId] = 0;
-      });
-      next[id] = sum;
-      return next;
-    });
-
-    setMergeMode(false);
-    setSelectedForMerge([]);
-    toast.success(`${name} merged into one unit`);
   };
 
   const handleMergeGroupSplit = (groupId: string) => {
-    const group = mergeGroups.find((g) => g.id === groupId);
-    if (!group) return;
-
-    if (hasActiveOrder(groupId)) {
-      toast.error(`${group.name} has an active order — settle or close it before splitting`);
-      return;
-    }
-
-    setMergeGroups((prev) =>
-      prev.map((g) => (g.id === groupId ? { ...g, status: "released" } : g)),
-    );
-    setTables((prev) =>
-      prev.map((t) => {
-        if (!group.tableIds.includes(t.id)) return t;
-        const { mergeGroupId: _, waiter: _w, ...rest } = t;
-        return { ...rest, status: "available", guests: 0 } as RTable;
-      }),
-    );
-    setGuestCounts((prev) => {
-      const next = { ...prev };
-      delete next[groupId];
-      group.tableIds.forEach((tableId) => {
-        next[tableId] = 0;
-      });
-      return next;
+    releaseMerge.mutate(groupId, {
+      onSuccess: () => toast.success("Merge group released"),
+      onError: (err: any) => toast.error(err?.message ?? "Could not release merge"),
     });
-
-    toast.success(`${group.name} split into individual tables`);
   };
 
-  const openSplitDialog = (table: RTable) => {
+  const openSplitDialog = (table: Table) => {
     const count: 2 | 3 = 2;
     setSplitDialog({
       open: true,
@@ -298,168 +248,39 @@ function TableManagement() {
     if (!table) return;
     const count = splitDialog.count;
     const capacities = splitDialog.capacities.slice(0, count);
-
     if (capacities.some((c) => c <= 0)) {
       toast.error("Each sub-table must have at least 1 seat");
       return;
     }
-
     const total = capacities.reduce((sum, c) => sum + c, 0);
     if (total > table.capacity) {
       toast.error("Seat allocation exceeds the original table capacity");
       return;
     }
-
-    if (isSubTable(table) || isSplitTable(table)) {
-      toast.error("Table is already split");
-      return;
-    }
-
-    if (splitGroups.some((g) => g.parentTableId === table.id && g.status === "active")) {
-      toast.error("Table is already split");
-      return;
-    }
-
-    const groupId = `sg-${Date.now()}`;
-    const suffixes = SUFFIXES.slice(0, count);
-    const existingGuests = guestCounts[table.id] ?? table.guests;
-    const existingOrder = orders[table.id] ?? [];
-
-    const subTables: RTable[] = [];
-    const subTableIds: string[] = [];
-
-    for (let i = 0; i < count; i++) {
-      const suffix = suffixes[i]!;
-      const id = `${table.id}${suffix}`;
-      const isFirst = i === 0;
-      const guests = isFirst ? existingGuests : 0;
-      const kots = isFirst ? table.kots : 0;
-      const waiter = isFirst ? table.waiter : undefined;
-      const startedAt = isFirst ? table.startedAt : undefined;
-      const hasOrder = isFirst && existingOrder.length > 0;
-      const status: TableStatus = guests > 0 || hasOrder ? "occupied" : "available";
-
-      subTableIds.push(id);
-      subTables.push({
-        id,
-        number: table.number,
-        name: `Table ${table.number}${suffix}`,
-        sectionId: table.sectionId,
-        capacity: capacities[i] ?? 0,
-        status,
-        guests,
-        ...(waiter ? { waiter } : {}),
-        ...(startedAt ? { startedAt } : {}),
-        kots,
-        parentTableId: table.id,
-        splitGroupId: groupId,
-        suffix,
-      });
-    }
-
-    const group: TableSplitGroup = {
-      id: groupId,
-      parentTableId: table.id,
-      sectionId: table.sectionId,
-      subTableIds,
-      status: "active",
-    };
-
-    setSplitGroups((prev) => [...prev, group]);
-    setTables((prev) => [
-      ...prev.map((t) => {
-        if (t.id !== table.id) return t;
-        const { waiter, startedAt, ...rest } = t;
-        return {
-          ...rest,
-          splitGroupId: groupId,
-          status: "available" as TableStatus,
-          guests: 0,
-          kots: 0,
-        };
-      }),
-      ...subTables,
-    ]);
-    setGuestCounts((prev) => {
-      const next = { ...prev };
-      delete next[table.id];
-      subTables.forEach((st) => {
-        next[st.id] = st.guests;
-      });
-      return next;
-    });
-    setOrders((prev) => {
-      const next = { ...prev };
-      if (existingOrder.length > 0) {
-        next[subTableIds[0]!] = existingOrder;
+    split.mutate(
+      { tableId: table.id, subTables: capacities.map((capacity) => ({ capacity })) },
+      {
+        onSuccess: () => {
+          closeSplitDialog();
+          toast.success(`${table.name} split`);
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not split"),
       }
-      delete next[table.id];
-      return next;
-    });
-
-    closeSplitDialog();
-    toast.success(`${table.name} split into ${subTables.map((t) => t.name).join(", ")}`);
+    );
   };
 
-  const canUnsplit = (subTable: RTable) => {
-    if (subTable.suffix !== "a") return false;
-    const group = splitGroups.find((g) => g.id === subTable.splitGroupId);
+  const canUnsplit = (t: Table) => {
+    if (t.suffix !== "a") return false;
+    const group = t.splitGroupId ? splitById.get(t.splitGroupId) : undefined;
     if (!group || group.status !== "active") return false;
-    return group.subTableIds.every((id) => {
-      const st = tables.find((t) => t.id === id);
-      if (!st) return false;
-      const guests = guestCounts[id] ?? st.guests;
-      if (guests > 0) return false;
-      if (st.status !== "available") return false;
-      if (hasActiveOrder(id)) return false;
-      return true;
-    });
+    return true;
   };
 
   const handleUnsplit = (groupId: string) => {
-    const group = splitGroups.find((g) => g.id === groupId);
-    if (!group || group.status !== "active") return;
-
-    const allClear = group.subTableIds.every((id) => {
-      const st = tables.find((t) => t.id === id);
-      if (!st) return false;
-      const guests = guestCounts[id] ?? st.guests;
-      if (guests > 0) return false;
-      if (st.status !== "available") return false;
-      if (hasActiveOrder(id)) return false;
-      return true;
+    unsplit.mutate(groupId, {
+      onSuccess: () => toast.success("Table restored"),
+      onError: (err: any) => toast.error(err?.message ?? "Could not unsplit"),
     });
-
-    if (!allClear) {
-      toast.error("All sub-tables must be vacant with no active orders before unsplitting");
-      return;
-    }
-
-    setTables((prev) =>
-      prev
-        .filter((t) => !group.subTableIds.includes(t.id))
-        .map((t) => {
-          if (t.id !== group.parentTableId) return t;
-          const { splitGroupId, waiter, startedAt, ...rest } = t;
-          return { ...rest, status: "available" as TableStatus, guests: 0, kots: 0 };
-        }),
-    );
-    setSplitGroups((prev) =>
-      prev.map((g) => (g.id === groupId ? { ...g, status: "released" } : g)),
-    );
-    setGuestCounts((prev) => {
-      const next = { ...prev };
-      group.subTableIds.forEach((id) => delete next[id]);
-      next[group.parentTableId] = 0;
-      return next;
-    });
-    setOrders((prev) => {
-      const next = { ...prev };
-      group.subTableIds.forEach((id) => delete next[id]);
-      return next;
-    });
-
-    toast.success("Table restored");
   };
 
   const handleTransfer = () => {
@@ -467,62 +288,22 @@ function TableManagement() {
       toast.error("Choose different source and destination tables");
       return;
     }
-
-    const source = tables.find((t) => t.id === transferSource);
-    const dest = tables.find((t) => t.id === transferDest);
-    if (!source || !dest) return;
-
-    if (source.mergeGroupId || dest.mergeGroupId) {
-      toast.error("Merged tables must be split before transferring");
-      return;
-    }
-    if (source.splitGroupId || source.parentTableId || dest.splitGroupId || dest.parentTableId) {
-      toast.error("Split tables cannot be transferred");
-      return;
-    }
-    if (hasActiveOrder(source.id)) {
-      toast.error(`${source.name} has an active order — settle or close it before transferring`);
-      return;
-    }
-    if (dest.status !== "available") {
-      toast.error(`${dest.name} is not vacant`);
-      return;
-    }
-
-    const sourceGuests = guestCounts[source.id] ?? source.guests;
-    const sourceWaiter = source.waiter;
-
-    setTables((prev) =>
-      prev.map((t) => {
-        if (t.id === source.id) {
-          const { waiter: _w, ...rest } = t;
-          return { ...rest, status: "available", guests: 0 } as RTable;
-        }
-        if (t.id === dest.id) {
-          return {
-            ...t,
-            status: source.status,
-            guests: sourceGuests,
-            ...(sourceWaiter ? { waiter: sourceWaiter } : {}),
-          };
-        }
-        return t;
-      }),
+    move.mutate(
+      { from: transferSource, to: transferDest },
+      {
+        onSuccess: () => {
+          setTransferOpen(false);
+          setTransferSource("");
+          setTransferDest("");
+          toast.success("Booking moved");
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not transfer"),
+      }
     );
-    setGuestCounts((prev) => ({
-      ...prev,
-      [source.id]: 0,
-      [dest.id]: sourceGuests,
-    }));
-
-    setTransferOpen(false);
-    setTransferSource("");
-    setTransferDest("");
-    toast.success(`Moved booking from ${source.name} to ${dest.name}`);
   };
 
   const transferSources = tables.filter(
-    (t) => !t.mergeGroupId && !t.splitGroupId && !t.parentTableId && !hasActiveOrder(t.id),
+    (t) => !t.mergeGroupId && !t.splitGroupId && !t.parentTableId,
   );
   const transferDests = tables.filter(
     (t) =>
@@ -537,25 +318,40 @@ function TableManagement() {
     ? splitDialog.capacities.slice(0, splitDialog.count).reduce((sum, c) => sum + c, 0)
     : 0;
   const splitValid =
-    splitDialog.table &&
+    !!splitDialog.table &&
     splitDialog.capacities.slice(0, splitDialog.count).every((c) => c > 0) &&
     splitTotal <= splitDialog.table.capacity;
+
+  const dineInSections = sections.filter((s) => s.type === "dine-in");
+
+  const handleUpdateTable = () => {
+    if (!editing) return;
+    const name = editing.suffix
+      ? `Table ${editing.number}${editing.suffix}`
+      : `Table ${editing.number}`;
+    updateTable.mutate(
+      { id: editing.id, number: editing.number, capacity: editing.capacity, name },
+      {
+        onSuccess: () => {
+          setEditing(null);
+          toast.success("Table updated");
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not update"),
+      }
+    );
+  };
 
   return (
     <div className="space-y-5 p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Table Management</h1>
-          <p className="text-sm text-muted-foreground">
-            Floor plan, statuses and seating for every room.
-          </p>
+          <p className="text-sm text-muted-foreground">Floor plan, statuses and seating for every room.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {mergeMode ? (
             <>
-              <span className="text-sm text-muted-foreground">
-                {selectedForMerge.length} selected
-              </span>
+              <span className="text-sm text-muted-foreground">{selectedForMerge.length} selected</span>
               <Button onClick={handleMerge} disabled={selectedForMerge.length < 2}>
                 Merge
               </Button>
@@ -591,7 +387,7 @@ function TableManagement() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SECTIONS.filter((s) => s.type === "dine-in").map((s) => (
+              {dineInSections.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
                 </SelectItem>
@@ -609,9 +405,7 @@ function TableManagement() {
         ].map((s) => (
           <Card key={s.label} className="gap-1 p-4 shadow-card">
             <p className="text-3xl font-bold tabular-nums">{s.value}</p>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {s.label}
-            </p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
           </Card>
         ))}
       </div>
@@ -623,8 +417,9 @@ function TableManagement() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {visibleUnits.map((u) => {
           if (u.kind === "group") {
-            const groupGuests = guestCounts[u.group.id] ?? u.group.guests;
-            const groupOccupied = groupGuests > 0 || hasActiveOrder(u.group.id);
+            const groupOccupied =
+              u.group.guests > 0 ||
+              u.tables.some((t) => t.status !== "available" && t.status !== "reserved");
             const capacity = u.tables.reduce((sum, t) => sum + t.capacity, 0);
             return (
               <Card key={u.group.id} className="gap-3 border-primary/30 p-4 shadow-card">
@@ -640,7 +435,7 @@ function TableManagement() {
                     <span
                       className={cn(
                         "mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium",
-                        groupOccupied ? "bg-success-soft text-success" : "bg-muted text-foreground",
+                        groupOccupied ? "bg-success-soft text-success" : "bg-muted text-foreground"
                       )}
                     >
                       {groupOccupied ? "Occupied" : "Vacant"}
@@ -673,7 +468,7 @@ function TableManagement() {
                     checked={selectedForMerge.includes(t.id)}
                     onCheckedChange={(checked) =>
                       setSelectedForMerge((prev) =>
-                        checked === true ? [...prev, t.id] : prev.filter((id) => id !== t.id),
+                        checked === true ? [...prev, t.id] : prev.filter((id) => id !== t.id)
                       )
                     }
                     aria-label={`Select ${t.name}`}
@@ -685,8 +480,8 @@ function TableManagement() {
                     t.status === "occupied" || t.status === "bill-requested"
                       ? "bg-success text-success-foreground"
                       : t.status === "reserved"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-foreground",
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-foreground"
                   )}
                 >
                   {tableNumber}
@@ -696,11 +491,12 @@ function TableManagement() {
                   {subTable && <p className="text-[11px] text-muted-foreground">Sub-table</p>}
                   <p className="text-xs text-muted-foreground">
                     {t.capacity} seats · {sectionName}
+                    {t.waiter ? ` · ${t.waiter}` : ""}
                   </p>
                   <span
                     className={cn(
                       "mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium",
-                      statusStyles[t.status],
+                      statusStyles[t.status]
                     )}
                   >
                     {statusLabel[t.status]}
@@ -720,21 +516,13 @@ function TableManagement() {
               {!mergeMode && (
                 <div className="flex gap-2">
                   {t.status === "available" && (
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => setStatus(t.id, "occupied")}
-                    >
+                    <Button size="sm" className="flex-1" onClick={() => setStatus(t.id, "occupied")}>
                       Seat Guests
                     </Button>
                   )}
                   {t.status === "reserved" && (
                     <>
-                      <Button
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => setStatus(t.id, "occupied")}
-                      >
+                      <Button size="sm" className="flex-1" onClick={() => setStatus(t.id, "occupied")}>
                         Seat
                       </Button>
                       <Button
@@ -752,7 +540,7 @@ function TableManagement() {
                       size="sm"
                       variant="outline"
                       className="flex-1"
-                      onClick={() => requestBill(t)}
+                      onClick={() => handleRequestBill(t)}
                     >
                       Request Bill
                     </Button>
@@ -773,11 +561,7 @@ function TableManagement() {
                     </Button>
                   )}
                   {t.status === "needs-cleaning" && (
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => setStatus(t.id, "available")}
-                    >
+                    <Button size="sm" className="flex-1" onClick={() => setStatus(t.id, "available")}>
                       Mark Cleaned
                     </Button>
                   )}
@@ -832,33 +616,31 @@ function TableManagement() {
                   onChange={(e) => setEditing({ ...editing, capacity: Number(e.target.value) })}
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="twaiter">Waiter</Label>
+                <Select
+                  value={editing.waiterId ?? ""}
+                  onValueChange={(v) => setEditing({ ...editing, waiterId: v || null })}
+                >
+                  <SelectTrigger id="twaiter">
+                    <SelectValue placeholder="No waiter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {staff.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>
               Cancel
             </Button>
-            <Button
-              onClick={() => {
-                if (editing) {
-                  setTables((prev) =>
-                    prev.map((t) =>
-                      t.id === editing.id
-                        ? {
-                            ...editing,
-                            name: editing.suffix
-                              ? `Table ${editing.number}${editing.suffix}`
-                              : `Table ${editing.number}`,
-                          }
-                        : t,
-                    ),
-                  );
-                }
-                setEditing(null);
-              }}
-            >
-              Update Table
-            </Button>
+            <Button onClick={handleUpdateTable}>Update Table</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -870,11 +652,6 @@ function TableManagement() {
           </DialogHeader>
           {splitDialog.table && (
             <div className="space-y-4">
-              {hasActiveOrder(splitDialog.table.id) && (
-                <p className="rounded-lg bg-warning-soft p-2 text-xs text-warning-foreground">
-                  This table has an active order. It will be moved to sub-table 1a.
-                </p>
-              )}
               <div className="space-y-1.5">
                 <Label>Number of sub-tables</Label>
                 <Select
@@ -921,8 +698,7 @@ function TableManagement() {
               </p>
               {!splitValid && (
                 <p className="text-sm text-destructive">
-                  Each sub-table needs at least 1 seat and the total cannot exceed the table
-                  capacity.
+                  Each sub-table needs at least 1 seat and the total cannot exceed the table capacity.
                 </p>
               )}
             </div>

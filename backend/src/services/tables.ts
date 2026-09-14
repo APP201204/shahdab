@@ -548,6 +548,39 @@ export async function transferTable({
   });
 }
 
+export async function updateTable({
+  tableId,
+  number,
+  capacity,
+  name,
+}: {
+  tableId: string;
+  number?: number;
+  capacity?: number;
+  name?: string;
+}) {
+  const [table] = await db
+    .select()
+    .from(schema.tables)
+    .where(eq(schema.tables.id, tableId));
+  if (!table) throw new Error("table not found");
+
+  const updates: any = {};
+  if (number !== undefined) updates.number = number;
+  if (capacity !== undefined) updates.capacity = capacity;
+  if (name !== undefined) updates.name = name;
+
+  if (Object.keys(updates).length === 0) throw new Error("nothing to update");
+
+  const [updated] = await db
+    .update(schema.tables)
+    .set(updates)
+    .where(eq(schema.tables.id, tableId))
+    .returning();
+  emitTableUpdate(updated.outletId, updated);
+  return updated;
+}
+
 export async function getTableGroups({ outletId }: { outletId: string }) {
   const mergeGroups = await db
     .select()
