@@ -4,6 +4,7 @@ const API_BASE =
 
 async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     ...init,
   });
@@ -411,4 +412,22 @@ export const api = {
     markRead: (outletId: string, ids?: string[]) =>
       post("/notifications/read", { outletId, ...(ids?.length ? { ids } : {}) }) as Promise<unknown>,
   },
+  auth: {
+    login: (body: { phone: string; password: string }) =>
+      post("/auth/login", body) as Promise<{
+        staff: SessionStaff;
+      }>,
+    me: () => get("/auth/me") as Promise<{ staff: SessionStaff } | null>,
+    logout: () => post("/auth/logout") as Promise<{ ok: boolean }>,
+  },
+};
+
+export type SessionStaff = {
+  userId: string;
+  staffId: string;
+  outletId: string;
+  orgId: string;
+  roles: StaffRole[];
+  name: string;
+  phone: string;
 };

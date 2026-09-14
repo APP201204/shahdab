@@ -4,10 +4,13 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useNavigate,
+  useLocation,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { useAuth } from "@/hooks/useAuth";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -119,6 +122,36 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const { data: staff, isLoading } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!staff && location.pathname !== "/login") {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [isLoading, staff, location.pathname, navigate]);
+
+  if (location.pathname === "/login") {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+        <Toaster />
+      </QueryClientProvider>
+    );
+  }
+
+  if (isLoading || !staff) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <div className="flex min-h-screen items-center justify-center">
+          <p className="text-muted-foreground">Loading…</p>
+        </div>
+        <Toaster />
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

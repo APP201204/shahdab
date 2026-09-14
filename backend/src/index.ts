@@ -16,6 +16,8 @@ import notificationRoutes from "./routes/notifications.ts";
 import reportRoutes from "./routes/reports.ts";
 import stockRoutes from "./routes/stock.ts";
 import sectionRoutes from "./routes/sections.ts";
+import authRoutes from "./routes/auth.ts";
+import { setAuthHook } from "./middleware/auth.ts";
 
 const app = Fastify({ logger: true });
 
@@ -26,6 +28,7 @@ app.get("/health", async (_request, reply) => {
   return reply.send({ status: "ok", db: Boolean(db) });
 });
 
+await app.register(authRoutes, { prefix: "/api/v1" });
 await app.register(menuRoutes, { prefix: "/api/v1" });
 await app.register(tableRoutes, { prefix: "/api/v1" });
 await app.register(staffRoutes, { prefix: "/api/v1" });
@@ -37,6 +40,8 @@ await app.register(notificationRoutes, { prefix: "/api/v1" });
 await app.register(reportRoutes, { prefix: "/api/v1" });
 await app.register(stockRoutes, { prefix: "/api/v1" });
 await app.register(sectionRoutes, { prefix: "/api/v1" });
+
+setAuthHook(app);
 
 await app.ready();
 

@@ -15,6 +15,7 @@ import { Route as BillingRouteImport } from './routes/billing'
 import { Route as BillingStationsRouteImport } from './routes/billing-stations'
 import { Route as DeliveryRouteImport } from './routes/delivery'
 import { Route as KitchenRouteImport } from './routes/kitchen'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as MenuRouteImport } from './routes/menu'
 import { Route as OrderStatusRouteImport } from './routes/order-status'
 import { Route as QuickOrderRouteImport } from './routes/quick-order'
@@ -53,6 +54,11 @@ const DeliveryRoute = DeliveryRouteImport.update({
 const KitchenRoute = KitchenRouteImport.update({
   id: '/kitchen',
   path: '/kitchen',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MenuRoute = MenuRouteImport.update({
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/billing-stations': typeof BillingStationsRoute
   '/delivery': typeof DeliveryRoute
   '/kitchen': typeof KitchenRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
   '/order-status': typeof OrderStatusRoute
   '/quick-order': typeof QuickOrderRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/billing-stations': typeof BillingStationsRoute
   '/delivery': typeof DeliveryRoute
   '/kitchen': typeof KitchenRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
   '/order-status': typeof OrderStatusRoute
   '/quick-order': typeof QuickOrderRoute
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/billing-stations': typeof BillingStationsRoute
   '/delivery': typeof DeliveryRoute
   '/kitchen': typeof KitchenRoute
+  '/login': typeof LoginRoute
   '/menu': typeof MenuRoute
   '/order-status': typeof OrderStatusRoute
   '/quick-order': typeof QuickOrderRoute
@@ -162,6 +171,7 @@ export interface FileRouteTypes {
     | '/billing-stations'
     | '/delivery'
     | '/kitchen'
+    | '/login'
     | '/menu'
     | '/order-status'
     | '/quick-order'
@@ -179,6 +189,7 @@ export interface FileRouteTypes {
     | '/billing-stations'
     | '/delivery'
     | '/kitchen'
+    | '/login'
     | '/menu'
     | '/order-status'
     | '/quick-order'
@@ -196,6 +207,7 @@ export interface FileRouteTypes {
     | '/billing-stations'
     | '/delivery'
     | '/kitchen'
+    | '/login'
     | '/menu'
     | '/order-status'
     | '/quick-order'
@@ -214,6 +226,7 @@ export interface RootRouteChildren {
   BillingStationsRoute: typeof BillingStationsRoute
   DeliveryRoute: typeof DeliveryRoute
   KitchenRoute: typeof KitchenRoute
+  LoginRoute: typeof LoginRoute
   MenuRoute: typeof MenuRoute
   OrderStatusRoute: typeof OrderStatusRoute
   QuickOrderRoute: typeof QuickOrderRoute
@@ -267,6 +280,13 @@ declare module '@tanstack/react-router' {
       path: '/kitchen'
       fullPath: '/kitchen'
       preLoaderRoute: typeof KitchenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/menu': {
@@ -342,6 +362,7 @@ const rootRouteChildren: RootRouteChildren = {
   BillingStationsRoute: BillingStationsRoute,
   DeliveryRoute: DeliveryRoute,
   KitchenRoute: KitchenRoute,
+  LoginRoute: LoginRoute,
   MenuRoute: MenuRoute,
   OrderStatusRoute: OrderStatusRoute,
   QuickOrderRoute: QuickOrderRoute,
