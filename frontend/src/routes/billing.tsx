@@ -33,17 +33,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  SECTIONS,
-  TAXES,
-  type Bill,
-  type OrderLine,
-  type Payment,
-  type PaymentMethod,
-} from "@/data/seed";
+import { SECTIONS, TAXES, type Payment, type PaymentMethod } from "@/data/seed";
 import { inr, timeOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useAppState } from "@/lib/app-state";
+import { useBillingQueue, useCloseBill } from "@/hooks/useBilling";
+import { useStaff } from "@/hooks/useStaff";
+import { OrderLine } from "@/lib/api";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/billing")({
@@ -90,7 +85,8 @@ type QueueUnit = {
   requested: boolean;
   waiter?: string | undefined;
   guests: number;
-  startedAt?: string | undefined;
+  startedAt?: string | null | undefined;
+  order?: { id: string; status: string } | null;
   items: OrderLine[];
 };
 
@@ -127,8 +123,9 @@ function computeTotals(
 }
 
 function Billing() {
-  const { tables, setTables, mergeGroups, orders, setOrders, bills, setBills, notify } =
-    useAppState();
+  const { data: queueData } = useBillingQueue();
+  const { data: staffData } = useStaff("SHADAB");
+  const closeBillApi = useCloseBill();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [discount, setDiscount] = useState<Discount>({ kind: "flat", value: 0 });
@@ -144,42 +141,19 @@ function Billing() {
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   const queue = useMemo<QueueUnit[]>(() => {
-    const units: QueueUnit[] = [];
-    tables.forEach((t) => {
-      const items = (orders[t.id] ?? []).filter((l) => l.status !== "cancelled");
-      if (items.length === 0 && t.status !== "bill-requested") return;
-      if (t.mergeGroupId) return;
-      units.push({
-        id: t.id,
-        name: t.name,
-        sectionId: t.sectionId,
-        sectionName: SECTIONS.find((s) => s.id === t.sectionId)?.name ?? t.sectionId,
-        requested: t.status === "bill-requested",
-        waiter: t.waiter,
-        guests: t.guests,
-        startedAt: t.startedAt,
-        items,
-      });
-    });
-    mergeGroups
-      .filter((g) => g.status === "active")
-      .forEach((g) => {
-        const items = (orders[g.id] ?? []).filter((l) => l.status !== "cancelled");
-        if (items.length === 0) return;
-        units.push({
-          id: g.id,
-          name: g.name,
-          sectionId: g.sectionId,
-          sectionName: SECTIONS.find((s) => s.id === g.sectionId)?.name ?? g.sectionId,
-          requested: true,
-          waiter: g.waiter,
-          guests: g.guests,
-          startedAt: undefined,
-          items,
-        });
-      });
-    return units.sort((a, b) => Number(b.requested) - Number(a.requested));
-  }, [tables, mergeGroups, orders]);
+    return (queueData?.queue ?? []).map((u) => ({
+      id: u.unitId,
+      name: u.unitName,
+      sectionId: u.sectionId,
+      sectionName: SECTIONS.find((s) => s.id === u.sectionId)?.name ?? u.sectionId,
+      requested: u.requested,
+      waiter: u.waiter,
+      guests: u.guests,
+      startedAt: u.startedAt,
+      order: u.order,
+      items: (u.items ?? []).filter((l) => l.status !== "cancelled"),
+    }));
+  }, [queueData]);
 
   const selected = queue.find((u) => u.id === selectedId) ?? queue[0] ?? null;
 
@@ -281,40 +255,38 @@ function Billing() {
       toast.error("Collect full payment on every sub-bill before closing");
       return;
     }
-    const { mrpTotal, rounding, ...totals } = computeTotals(
-      selected.items,
-      discount,
-      serviceChargeRate,
+    if (!selected.order) {
+      toast.error("No order found for this unit");
+      return;
+    }
+    const cashierId = staffData?.staff[0]?.id;
+    if (!cashierId) {
+      toast.error("No staff available to record the bill");
+      return;
+    }
+    const allPayments = Object.values(payments).flat();
+    closeBillApi.mutate(
+      {
+        orderId: selected.order.id,
+        payments: allPayments,
+        cashierId,
+        customer: selected.name,
+        discount,
+      },
+      {
+        onSuccess: (bill) => {
+          toast.success(`Bill ${bill.number} closed — ${selected.name} marked Paid`);
+          setSelectedId(null);
+          setPayments({});
+          setPayDraft({});
+          setSplitMode("none");
+          setSplitCount(2);
+          setSplitNames(["Split 1", "Split 2"]);
+          setItemAllocations({});
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not close bill"),
+      }
     );
-    const bill: Bill = {
-      id: `b${Date.now()}`,
-      number: `SH-${10246 + bills.length}`,
-      unitId: selected.id,
-      unitName: selected.name,
-      sectionId: selected.sectionId,
-      orderType: "dine-in",
-      items: selected.items,
-      ...totals,
-      payments: Object.values(payments).flat(),
-      status: "paid",
-      cashier: "Shabbir",
-      createdAt: new Date().toISOString(),
-      closedAt: new Date().toISOString(),
-    };
-    setBills((prev) => [bill, ...prev]);
-    setOrders((prev) => {
-      const next = { ...prev };
-      delete next[selected.id];
-      return next;
-    });
-    const group = mergeGroups.find((g) => g.id === selected.id);
-    const tableIds = group ? group.tableIds : [selected.id];
-    setTables((prev) => prev.map((t) => (tableIds.includes(t.id) ? { ...t, status: "paid" } : t)));
-    notify(`Bill ${bill.number} closed for ${selected.name} — ${inr(bill.total)}`);
-    toast.success(`Bill ${bill.number} closed — ${selected.name} marked Paid`);
-    setSelectedId(null);
-    setPayments({});
-    setPayDraft({});
   };
 
   return (
