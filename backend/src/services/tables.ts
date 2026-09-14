@@ -531,7 +531,7 @@ export async function transferTable({
 }: {
   tableId: string;
   toSectionId?: string;
-  toWaiterId?: string;
+  toWaiterId?: string | null;
 }) {
   return db.transaction(async (tx) => {
     const [table] = await tx
