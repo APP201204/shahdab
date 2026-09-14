@@ -1,4 +1,4 @@
-import { eq, and, inArray, ne } from "drizzle-orm";
+import { eq, and, inArray, ne, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
@@ -440,6 +440,64 @@ export async function unsplitTable({ splitGroupId }: { splitGroupId: string }) {
   });
 }
 
+export async function moveTableBooking({
+  fromTableId,
+  toTableId,
+}: {
+  fromTableId: string;
+  toTableId: string;
+}) {
+  if (fromTableId === toTableId) throw new Error("source and destination must be different");
+  return db.transaction(async (tx) => {
+    const [source, dest] = await Promise.all([
+      tx.select().from(schema.tables).where(eq(schema.tables.id, fromTableId)).for("update"),
+      tx.select().from(schema.tables).where(eq(schema.tables.id, toTableId)).for("update"),
+    ]);
+    const fromTable = source[0];
+    const toTable = dest[0];
+    if (!fromTable || !toTable) throw new Error("table not found");
+    if (fromTable.outletId !== toTable.outletId) throw new Error("tables must be in the same outlet");
+    if (fromTable.mergeGroupId || toTable.mergeGroupId) throw new Error("merged tables cannot be moved");
+    if (fromTable.splitGroupId || fromTable.parentTableId || toTable.splitGroupId || toTable.parentTableId) {
+      throw new Error("split tables cannot be moved");
+    }
+    const activeOrderStatuses: any[] = ["open", "partially-served", "fully-served", "billed"];
+    const [activeOrder] = await tx
+      .select()
+      .from(schema.orders)
+      .where(and(eq(schema.orders.tableId, fromTableId), inArray(schema.orders.status, activeOrderStatuses)))
+      .limit(1);
+    if (activeOrder) throw new Error("cannot move a table with an active order");
+    if (toTable.status !== "available") throw new Error("destination table is not available");
+
+    const [updatedFrom] = await tx
+      .update(schema.tables)
+      .set({
+        status: "available",
+        guests: 0,
+        waiterId: null,
+        startedAt: null,
+        kots: 0,
+      })
+      .where(eq(schema.tables.id, fromTableId))
+      .returning();
+    const [updatedTo] = await tx
+      .update(schema.tables)
+      .set({
+        status: fromTable.status,
+        guests: fromTable.guests,
+        waiterId: fromTable.waiterId,
+        startedAt: fromTable.startedAt,
+        kots: fromTable.kots,
+      })
+      .where(eq(schema.tables.id, toTableId))
+      .returning();
+    emitTableUpdate(updatedFrom.outletId, updatedFrom);
+    emitTableUpdate(updatedTo.outletId, updatedTo);
+    return { from: updatedFrom, to: updatedTo };
+  });
+}
+
 export async function transferTable({
   tableId,
   toSectionId,
@@ -488,4 +546,61 @@ export async function transferTable({
     emitTableUpdate(updated.outletId, updated);
     return updated;
   });
+}
+
+export async function getTableGroups({ outletId }: { outletId: string }) {
+  const mergeGroups = await db
+    .select()
+    .from(schema.tableMergeGroups)
+    .where(and(eq(schema.tableMergeGroups.outletId, outletId), eq(schema.tableMergeGroups.status, "active")));
+  const splitGroups = await db
+    .select()
+    .from(schema.tableSplitGroups)
+    .where(and(eq(schema.tableSplitGroups.outletId, outletId), eq(schema.tableSplitGroups.status, "active")));
+
+  const allStaff = await db.select().from(schema.staff);
+  const staffById = new Map(allStaff.map((s) => [s.id, s.name]));
+
+  const [mergeLinks, splitTables] = await Promise.all([
+    mergeGroups.length
+      ? db
+          .select()
+          .from(schema.tableMergeGroupTables)
+          .where(inArray(schema.tableMergeGroupTables.mergeGroupId, mergeGroups.map((g) => g.id)))
+      : Promise.resolve([]),
+    splitGroups.length
+      ? db
+          .select()
+          .from(schema.tables)
+          .where(inArray(schema.tables.splitGroupId, splitGroups.map((g) => g.id)))
+      : Promise.resolve([]),
+  ]);
+
+  const linksByGroup = new Map<string, string[]>();
+  for (const link of mergeLinks) {
+    const list = linksByGroup.get(link.mergeGroupId) ?? [];
+    list.push(link.tableId);
+    linksByGroup.set(link.mergeGroupId, list);
+  }
+
+  const subTablesByGroup = new Map<string, string[]>();
+  for (const t of splitTables) {
+    if (t.splitGroupId) {
+      const list = subTablesByGroup.get(t.splitGroupId) ?? [];
+      list.push(t.id);
+      subTablesByGroup.set(t.splitGroupId, list);
+    }
+  }
+
+  return {
+    mergeGroups: mergeGroups.map((g) => ({
+      ...g,
+      tableIds: linksByGroup.get(g.id) ?? [],
+      waiter: g.waiterId ? staffById.get(g.waiterId) : undefined,
+    })),
+    splitGroups: splitGroups.map((g) => ({
+      ...g,
+      subTableIds: subTablesByGroup.get(g.id) ?? [],
+    })),
+  };
 }

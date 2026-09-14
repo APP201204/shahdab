@@ -127,6 +127,7 @@ export type Table = {
   status: TableStatus;
   guests: number;
   waiterId?: string | null;
+  waiter?: string;
   startedAt?: string | null;
   kots: number;
   mergeGroupId?: string | null;
@@ -134,6 +135,26 @@ export type Table = {
   parentTableId?: string | null;
   suffix?: string | null;
   createdAt: string;
+};
+
+export type TableMergeGroup = {
+  id: string;
+  outletId: string;
+  sectionId: string;
+  name: string;
+  status: "active" | "released";
+  waiter?: string;
+  guests: number;
+  tableIds: string[];
+};
+
+export type TableSplitGroup = {
+  id: string;
+  outletId: string;
+  parentTableId: string;
+  sectionId: string;
+  status: "active" | "released";
+  subTableIds: string[];
 };
 
 export type ReservationStatus = "booked" | "seated" | "cancelled" | "no-show";
@@ -272,6 +293,29 @@ export const api = {
   tables: {
     list: (outlet: string) =>
       get(`/tables?outlet=${encodeURIComponent(outlet)}`) as Promise<{ tables: Table[] }>,
+    groups: (outlet: string) =>
+      get(`/tables/groups?outlet=${encodeURIComponent(outlet)}`) as Promise<{
+        mergeGroups: TableMergeGroup[];
+        splitGroups: TableSplitGroup[];
+      }>,
+    seat: (id: string, guests: number, waiterId?: string) =>
+      post(`/tables/${encodeURIComponent(id)}/seat`, { guests, ...(waiterId ? { waiterId } : {}) }) as Promise<Table>,
+    requestBill: (id: string) =>
+      post(`/tables/${encodeURIComponent(id)}/request-bill`) as Promise<Table>,
+    needsCleaning: (id: string) =>
+      post(`/tables/${encodeURIComponent(id)}/needs-cleaning`) as Promise<Table>,
+    markCleaned: (id: string) =>
+      post(`/tables/${encodeURIComponent(id)}/mark-cleaned`) as Promise<Table>,
+    move: (id: string, toTableId: string) =>
+      post(`/tables/${encodeURIComponent(id)}/move`, { toTableId }) as Promise<{ from: Table; to: Table }>,
+    merge: (tableIds: string[], body?: { guests?: number; waiterId?: string; name?: string }) =>
+      post("/table-merges", { tableIds, ...body }) as Promise<unknown>,
+    releaseMerge: (id: string) =>
+      post(`/table-merges/${encodeURIComponent(id)}/release`) as Promise<unknown>,
+    split: (tableId: string, subTables: { capacity: number; name?: string }[]) =>
+      post("/table-splits", { tableId, subTables }) as Promise<unknown>,
+    unsplit: (id: string) =>
+      post(`/table-splits/${encodeURIComponent(id)}/unsplit`) as Promise<unknown>,
   },
   reservations: {
     list: (outlet: string) =>

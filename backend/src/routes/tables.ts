@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
 import * as tables from "../services/tables.ts";
@@ -32,7 +32,34 @@ export default async function tableRoutes(app: FastifyInstance) {
       .from(schema.tables)
       .where(eq(schema.tables.outletId, outletId));
 
-    return { tables: rows };
+    const waiterIds = [...new Set(rows.map((r) => r.waiterId).filter(Boolean))] as string[];
+    const staff = waiterIds.length
+      ? await db.select().from(schema.staff).where(inArray(schema.staff.id, waiterIds))
+      : [];
+    const staffById = new Map(staff.map((s) => [s.id, s.name]));
+
+    return { tables: rows.map((t) => ({ ...t, waiter: t.waiterId ? staffById.get(t.waiterId) : undefined })) };
+  });
+
+  app.get("/tables/groups", async (request, reply) => {
+    const query = request.query as { outletId?: string; outlet?: string };
+    let outletId = query.outletId ?? query.outlet;
+    if (!outletId) {
+      return reply.status(400).send({ error: "outletId or outlet query param is required" });
+    }
+    const uuidCheck = z.string().uuid().safeParse(outletId);
+    if (!uuidCheck.success) {
+      const [outlet] = await db.select().from(schema.outlets).where(eq(schema.outlets.name, outletId)).limit(1);
+      if (!outlet) {
+        return reply.status(400).send({ error: "outlet not found" });
+      }
+      outletId = outlet.id;
+    }
+    try {
+      return await tables.getTableGroups({ outletId });
+    } catch (err: any) {
+      return reply.status(409).send({ error: err.message });
+    }
   });
 
   const SeatBody = z.object({
@@ -84,6 +111,28 @@ export default async function tableRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         return await tables.markCleaned({ tableId: request.params.tableId });
+      } catch (err: any) {
+        return reply.status(409).send({ error: err.message });
+      }
+    }
+  );
+
+  const MoveBody = z.object({
+    toTableId: z.string().uuid(),
+  });
+
+  app.post<{ Params: { tableId: string }; Body: z.infer<typeof MoveBody> }>(
+    "/tables/:tableId/move",
+    async (request, reply) => {
+      const body = MoveBody.safeParse(request.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: body.error.message });
+      }
+      try {
+        return await tables.moveTableBooking({
+          fromTableId: request.params.tableId,
+          toTableId: body.data.toTableId,
+        });
       } catch (err: any) {
         return reply.status(409).send({ error: err.message });
       }
