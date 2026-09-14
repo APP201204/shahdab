@@ -260,6 +260,97 @@ export async function cancelItem({ orderItemId }: { orderItemId: string }) {
   });
 }
 
+export async function getActiveOrderUnits({ outletId }: { outletId: string }) {
+  const activeOrders = await db
+    .select()
+    .from(schema.orders)
+    .where(
+      and(
+        eq(schema.orders.outletId, outletId),
+        inArray(schema.orders.status, ["open", "partially-served", "fully-served"])
+      )
+    );
+
+  const orderIds = activeOrders.map((o) => o.id);
+  const items = orderIds.length
+    ? await db
+        .select()
+        .from(schema.orderItems)
+        .where(inArray(schema.orderItems.orderId, orderIds))
+    : [];
+  const batches = orderIds.length
+    ? await db
+        .select()
+        .from(schema.kotBatches)
+        .where(inArray(schema.kotBatches.orderId, orderIds))
+    : [];
+
+  const tableIds = activeOrders.map((o) => o.tableId).filter(Boolean) as string[];
+  const mergeGroupIds = activeOrders.map((o) => o.mergeGroupId).filter(Boolean) as string[];
+
+  const [tables, groups, allStaff] = await Promise.all([
+    tableIds.length
+      ? db.select().from(schema.tables).where(inArray(schema.tables.id, tableIds))
+      : Promise.resolve([]),
+    mergeGroupIds.length
+      ? db
+          .select()
+          .from(schema.tableMergeGroups)
+          .where(inArray(schema.tableMergeGroups.id, mergeGroupIds))
+      : Promise.resolve([]),
+    db.select().from(schema.staff),
+  ]);
+
+  const sectionIds = [
+    ...new Set([...tables.map((t) => t.sectionId), ...groups.map((g) => g.sectionId)]),
+  ];
+  const sections = sectionIds.length
+    ? await db.select().from(schema.sections).where(inArray(schema.sections.id, sectionIds))
+    : [];
+
+  const sectionById = new Map(sections.map((s) => [s.id, s.name]));
+  const batchById = new Map(batches.map((b) => [b.id, b.batchNumber]));
+  const staffById = new Map(allStaff.map((s) => [s.id, s.name]));
+
+  const tableById = new Map(tables.map((t) => [t.id, t]));
+  const groupById = new Map(groups.map((g) => [g.id, g]));
+
+  const units = [];
+  for (const order of activeOrders) {
+    const table = order.tableId ? tableById.get(order.tableId) : undefined;
+    const group = order.mergeGroupId ? groupById.get(order.mergeGroupId) : undefined;
+    const name = table?.name ?? group?.name ?? "Unknown";
+    const sectionId = table?.sectionId ?? group?.sectionId;
+    const waiterId = table?.waiterId;
+    const unit = {
+      id: order.mergeGroupId ?? order.tableId ?? order.id,
+      name,
+      sectionId,
+      sectionName: sectionById.get(sectionId) ?? "",
+      waiter: waiterId ? staffById.get(waiterId) : undefined,
+      lines: [] as any[],
+    };
+    for (const item of items.filter((i) => i.orderId === order.id && i.tableStatus !== "cancelled")) {
+      unit.lines.push({
+        id: item.id,
+        orderId: order.id,
+        itemId: item.menuItemId,
+        name: item.name,
+        variant: item.variant,
+        qty: item.qty,
+        unitPrice: item.unitPrice,
+        batch: item.kotBatchId ? batchById.get(item.kotBatchId) : undefined,
+        note: item.note,
+        served: item.tableStatus === "on-table" || item.servedAt !== null,
+        mrp: item.mrp,
+      });
+    }
+    units.push(unit);
+  }
+
+  return { units };
+}
+
 export async function serveItem({ orderItemId }: { orderItemId: string }) {
   return db.transaction(async (tx) => {
     const [item] = await tx

@@ -15,6 +15,18 @@ export default async function orderRoutes(app: FastifyInstance) {
     return order;
   });
 
+  app.get("/orders/active", async (request, reply) => {
+    const query = request.query as { outlet?: string };
+    if (!query.outlet) {
+      return reply.status(400).send({ error: "outlet is required" });
+    }
+    try {
+      return await orders.getActiveOrderUnits({ outletId: query.outlet });
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
+  });
+
   const AddItemsBody = z.object({
     items: z
       .array(

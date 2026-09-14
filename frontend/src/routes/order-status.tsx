@@ -3,10 +3,10 @@ import { useMemo } from "react";
 import { ClipboardCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { SECTIONS, type OrderLine } from "@/data/seed";
 import { cn } from "@/lib/utils";
 import { inr } from "@/lib/format";
-import { useAppState } from "@/lib/app-state";
+import { useOrders, useServeItem } from "@/hooks/useOrders";
+import { OrderLine } from "@/lib/api";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/order-status")({
@@ -23,20 +23,11 @@ export const Route = createFileRoute("/order-status")({
   component: OrderStatus,
 });
 
-type Unit = {
-  id: string;
-  name: string;
-  sectionName: string;
-  waiter?: string | undefined;
-  lines: OrderLine[];
-};
-
 function derivedStatus(lines: OrderLine[]): string {
-  const active = lines.filter((l) => l.status !== "cancelled");
-  if (active.length === 0) return "Open";
-  const served = active.filter((l) => l.served).length;
+  if (lines.length === 0) return "Open";
+  const served = lines.filter((l) => l.served).length;
   if (served === 0) return "Open";
-  if (served === active.length) return "Fully Served";
+  if (served === lines.length) return "Fully Served";
   return "Partially Served";
 }
 
@@ -47,44 +38,21 @@ const derivedStyle: Record<string, string> = {
 };
 
 function OrderStatus() {
-  const { tables, mergeGroups, orders, setOrders, notify } = useAppState();
+  const { data } = useOrders();
+  const serve = useServeItem();
 
-  const units = useMemo<Unit[]>(() => {
-    const list: Unit[] = [];
-    tables.forEach((t) => {
-      const lines = (orders[t.id] ?? []).filter((l) => l.status !== "cancelled");
-      if (lines.length === 0 || t.mergeGroupId) return;
-      list.push({
-        id: t.id,
-        name: t.name,
-        sectionName: SECTIONS.find((s) => s.id === t.sectionId)?.name ?? "",
-        waiter: t.waiter,
-        lines,
-      });
+  const units = useMemo(() => data?.units ?? [], [data]);
+
+  const markServed = (
+    _unitId: string,
+    lineId: string,
+    unitName: string,
+    itemName: string
+  ) => {
+    serve.mutate(lineId, {
+      onSuccess: () => toast.success(`${itemName} served at ${unitName}`),
+      onError: (err: any) => toast.error(err?.message ?? "Could not mark served"),
     });
-    mergeGroups
-      .filter((g) => g.status === "active")
-      .forEach((g) => {
-        const lines = (orders[g.id] ?? []).filter((l) => l.status !== "cancelled");
-        if (lines.length === 0) return;
-        list.push({
-          id: g.id,
-          name: g.name,
-          sectionName: SECTIONS.find((s) => s.id === g.sectionId)?.name ?? "",
-          waiter: g.waiter,
-          lines,
-        });
-      });
-    return list;
-  }, [tables, mergeGroups, orders]);
-
-  const markServed = (unitId: string, lineId: string, unitName: string, itemName: string) => {
-    setOrders((prev) => ({
-      ...prev,
-      [unitId]: (prev[unitId] ?? []).map((l) => (l.id === lineId ? { ...l, served: true } : l)),
-    }));
-    notify(`${unitName}: ${itemName} marked served`);
-    toast.success(`${itemName} served at ${unitName}`);
   };
 
   return (
@@ -114,14 +82,14 @@ function OrderStatus() {
                 <div>
                   <p className="text-sm font-semibold">{u.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {u.sectionName}
+                    {u.sectionName ?? ""}
                     {u.waiter ? ` · ${u.waiter}` : ""}
                   </p>
                 </div>
                 <span
                   className={cn(
                     "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                    derivedStyle[status],
+                    derivedStyle[status]
                   )}
                 >
                   {status}
@@ -144,7 +112,7 @@ function OrderStatus() {
                           <p
                             className={cn(
                               "truncate",
-                              l.served && "text-muted-foreground line-through",
+                              l.served && "text-muted-foreground line-through"
                             )}
                           >
                             {l.name}
@@ -163,6 +131,7 @@ function OrderStatus() {
                             size="sm"
                             variant="outline"
                             onClick={() => markServed(u.id, l.id, u.name, l.name)}
+                            disabled={serve.isPending}
                           >
                             Mark Served
                           </Button>

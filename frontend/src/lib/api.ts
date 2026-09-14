@@ -151,6 +151,29 @@ export type Reservation = {
   createdAt: string;
 };
 
+export type OrderLine = {
+  id: string;
+  orderId: string;
+  itemId: string;
+  name: string;
+  variant?: string | null;
+  qty: number;
+  unitPrice: number;
+  batch?: number | null;
+  note?: string | null;
+  served: boolean;
+  mrp: boolean;
+};
+
+export type OrderUnit = {
+  id: string;
+  name: string;
+  sectionId?: string | null;
+  sectionName?: string;
+  waiter?: string;
+  lines: OrderLine[];
+};
+
 export type MenuItem = {
   id: string;
   outletId: string;
@@ -254,5 +277,15 @@ export const api = {
       post(`/reservations/${encodeURIComponent(id)}/cancel`) as Promise<Reservation>,
     noShow: (id: string) =>
       post(`/reservations/${encodeURIComponent(id)}/no-show`) as Promise<Reservation>,
+  },
+  orders: {
+    active: (outlet: string) =>
+      get(`/orders/active?outlet=${encodeURIComponent(outlet)}`) as Promise<{
+        units: OrderUnit[];
+      }>,
+  },
+  orderItems: {
+    serve: (id: string) =>
+      post(`/order-items/${encodeURIComponent(id)}/served`) as Promise<unknown>,
   },
 };
