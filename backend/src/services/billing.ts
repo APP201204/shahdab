@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql, getTableColumns } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
@@ -314,8 +314,12 @@ export async function listBills({
   if (sectionId) conditions.push(eq(schema.bills.sectionId, sectionId));
 
   const bills = await db
-    .select()
+    .select({
+      ...getTableColumns(schema.bills),
+      cashierName: schema.staff.name,
+    })
     .from(schema.bills)
+    .leftJoin(schema.staff, eq(schema.bills.cashierId, schema.staff.id))
     .where(and(...conditions))
     .orderBy(schema.bills.createdAt);
 
@@ -341,18 +345,30 @@ export async function listBills({
   }
 
   return {
-    bills: bills.map((b) => ({
-      ...b,
-      items: itemsByBill.get(b.id) ?? [],
-      payments: paymentsByBill.get(b.id) ?? [],
-    })),
+    bills: bills.map((b) => {
+      const { cashierName, ...rest } = b;
+      return {
+        ...rest,
+        cashier: cashierName ?? "Unknown",
+        items: itemsByBill.get(b.id) ?? [],
+        payments: paymentsByBill.get(b.id) ?? [],
+      };
+    }),
   };
 }
 
 export async function getBill(billId: string) {
-  const [bill] = await db.select().from(schema.bills).where(eq(schema.bills.id, billId));
-  if (!bill) throw new Error("bill not found");
+  const [row] = await db
+    .select({
+      ...getTableColumns(schema.bills),
+      cashierName: schema.staff.name,
+    })
+    .from(schema.bills)
+    .leftJoin(schema.staff, eq(schema.bills.cashierId, schema.staff.id))
+    .where(eq(schema.bills.id, billId));
+  if (!row) throw new Error("bill not found");
 
+  const { cashierName, ...bill } = row;
   const items = await db
     .select()
     .from(schema.billItems)
@@ -362,5 +378,5 @@ export async function getBill(billId: string) {
     .from(schema.billPayments)
     .where(eq(schema.billPayments.billId, billId));
 
-  return { ...bill, items, payments };
+  return { ...bill, cashier: cashierName ?? "Unknown", items, payments };
 }

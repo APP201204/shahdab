@@ -13,9 +13,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { SECTIONS, TAXES, type Bill } from "@/data/seed";
+import { SECTIONS, TAXES } from "@/data/seed";
 import { inr, timeOf } from "@/lib/format";
-import { useAppState } from "@/lib/app-state";
+import { useBills } from "@/hooks/useBills";
+import type { Bill } from "@/lib/api";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/bill-history")({
@@ -35,9 +36,14 @@ export const Route = createFileRoute("/bill-history")({
 const METHOD_LABEL = { cash: "Cash", card: "Card", upi: "UPI", wallet: "Wallet" } as const;
 
 function BillHistory() {
-  const { bills } = useAppState();
+  const { data, isLoading } = useBills();
+  const bills = data?.bills ?? [];
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Bill | null>(null);
+
+  if (isLoading) {
+    return <div className="p-5 text-muted-foreground">Loading bills…</div>;
+  }
 
   const filtered = bills.filter((b) => {
     const q = query.toLowerCase();
