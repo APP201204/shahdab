@@ -14,3 +14,8 @@ export function emitKitchenTicket(outletId: string, kitchenId: string, ticket: u
   const io = getSocketServer();
   io?.to(`outlet:${outletId}:kitchen:${kitchenId}`).emit("kitchen.ticket", ticket);
 }
+
+export function emitStockUpdate(outletId: string, payload: { menuItemId: string; variantId?: string | null; outOfStock: boolean }) {
+  const io = getSocketServer();
+  io?.to(`outlet:${outletId}:menu`).emit("stock.updated", payload);
+}

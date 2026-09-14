@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, inArray, asc } from "drizzle-orm";
+import { eq, inArray, asc, and } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
 
@@ -37,11 +37,19 @@ export default async function menuRoutes(app: FastifyInstance) {
       .from(schema.menuItems)
       .where(eq(schema.menuItems.outletId, outletId));
 
-    const variants = items.length
+    const stockOuts = await db
+      .select({ menuItemId: schema.stockOuts.menuItemId })
+      .from(schema.stockOuts)
+      .where(and(eq(schema.stockOuts.outletId, outletId), eq(schema.stockOuts.active, true)));
+    const outOfStock = new Set(stockOuts.map((s) => s.menuItemId));
+
+    const visibleItems = items.filter((i) => !outOfStock.has(i.id));
+
+    const variants = visibleItems.length
       ? await db
           .select()
           .from(schema.menuItemVariants)
-          .where(inArray(schema.menuItemVariants.itemId, items.map((i) => i.id)))
+          .where(inArray(schema.menuItemVariants.itemId, visibleItems.map((i) => i.id)))
       : [];
 
     const variantsByItem = new Map<string, typeof variants>();
@@ -52,7 +60,7 @@ export default async function menuRoutes(app: FastifyInstance) {
     }
 
     const itemsByCategory = new Map<string, any[]>();
-    for (const item of items) {
+    for (const item of visibleItems) {
       const list = itemsByCategory.get(item.categoryId) ?? [];
       list.push({ ...item, variants: variantsByItem.get(item.id) ?? [] });
       itemsByCategory.set(item.categoryId, list);

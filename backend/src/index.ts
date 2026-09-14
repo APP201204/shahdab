@@ -14,6 +14,7 @@ import kitchenRoutes from "./routes/kitchen.ts";
 import billingRoutes from "./routes/billing.ts";
 import notificationRoutes from "./routes/notifications.ts";
 import reportRoutes from "./routes/reports.ts";
+import stockRoutes from "./routes/stock.ts";
 
 const app = Fastify({ logger: true });
 
@@ -33,6 +34,7 @@ await app.register(kitchenRoutes, { prefix: "/api/v1" });
 await app.register(billingRoutes, { prefix: "/api/v1" });
 await app.register(notificationRoutes, { prefix: "/api/v1" });
 await app.register(reportRoutes, { prefix: "/api/v1" });
+await app.register(stockRoutes, { prefix: "/api/v1" });
 
 await app.ready();
 
@@ -54,6 +56,7 @@ io.on("connection", (socket) => {
     socket.join(`outlet:${outletId}`);
     socket.join(`outlet:${outletId}:tables`);
     socket.join(`outlet:${outletId}:reservations`);
+    socket.join(`outlet:${outletId}:menu`);
     if (kitchenId) socket.join(`outlet:${outletId}:kitchen:${kitchenId}`);
     if (role === "cashier") socket.join(`outlet:${outletId}:billing`);
     if (staffId) socket.join(`waiter:${staffId}`);
