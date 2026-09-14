@@ -174,6 +174,15 @@ export type OrderUnit = {
   lines: OrderLine[];
 };
 
+export type Notification = {
+  id: string;
+  outletId: string;
+  userId?: string | null;
+  message: string;
+  read: boolean;
+  at: string;
+};
+
 export type MenuItem = {
   id: string;
   outletId: string;
@@ -287,5 +296,13 @@ export const api = {
   orderItems: {
     serve: (id: string) =>
       post(`/order-items/${encodeURIComponent(id)}/served`) as Promise<unknown>,
+  },
+  notifications: {
+    list: (outletId: string) =>
+      get(`/notifications?outletId=${encodeURIComponent(outletId)}`) as Promise<{
+        notifications: Notification[];
+      }>,
+    markRead: (outletId: string, ids?: string[]) =>
+      post("/notifications/read", { outletId, ...(ids?.length ? { ids } : {}) }) as Promise<unknown>,
   },
 };

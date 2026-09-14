@@ -1,7 +1,8 @@
 import { Bell, ChevronDown, Wifi, CheckCircle2, UtensilsCrossed } from "lucide-react";
 import { RESTAURANT } from "@/data/seed";
 import { timeOf } from "@/lib/format";
-import { useAppState } from "@/lib/app-state";
+import { useSections } from "@/hooks/useSections";
+import { useNotifications, useMarkReadNotifications } from "@/hooks/useNotifications";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,8 +11,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+const OUTLET = "SHADAB";
+
 export function TopBar() {
-  const { notifications, setNotifications } = useAppState();
+  const { data: sectionsData } = useSections(OUTLET);
+  const outletId = sectionsData?.sections[0]?.outletId;
+  const { data } = useNotifications(outletId);
+  const markRead = useMarkReadNotifications(outletId);
+  const notifications = data?.notifications ?? [];
   const unread = notifications.filter((n) => !n.read).length;
 
   return (
@@ -69,7 +76,8 @@ export function TopBar() {
               <p className="text-xs font-semibold">Notifications</p>
               <button
                 className="text-[11px] font-medium text-primary"
-                onClick={() => setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))}
+                onClick={() => markRead.mutate()}
+                disabled={!outletId || markRead.isPending}
               >
                 Mark all read
               </button>

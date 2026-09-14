@@ -52,12 +52,18 @@ export async function listNotifications({
 
 export async function markRead({
   userId,
+  outletId,
   ids,
 }: {
-  userId: string;
+  userId?: string;
+  outletId?: string;
   ids?: string[];
 }) {
-  const conditions = [eq(schema.notifications.userId, userId), eq(schema.notifications.read, false)];
+  if (!userId && !outletId) throw new Error("userId or outletId required");
+
+  const conditions = [eq(schema.notifications.read, false)];
+  if (userId) conditions.push(eq(schema.notifications.userId, userId));
+  if (outletId) conditions.push(eq(schema.notifications.outletId, outletId));
   if (ids && ids.length > 0) {
     conditions.push(inArray(schema.notifications.id, ids));
   }

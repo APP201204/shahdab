@@ -16,7 +16,8 @@ export default async function notificationRoutes(app: FastifyInstance) {
   });
 
   const ReadBody = z.object({
-    userId: z.string().uuid(),
+    userId: z.string().uuid().optional(),
+    outletId: z.string().uuid().optional(),
     ids: z.array(z.string().uuid()).optional(),
   });
 
@@ -24,6 +25,9 @@ export default async function notificationRoutes(app: FastifyInstance) {
     const body = ReadBody.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ error: body.error.message });
+    }
+    if (!body.data.userId && !body.data.outletId) {
+      return reply.status(400).send({ error: "userId or outletId is required" });
     }
     try {
       return await notifications.markRead(body.data);
