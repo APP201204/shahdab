@@ -4,9 +4,11 @@ import { Flame, PackageX } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { MENU_ITEMS } from "@/data/seed";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { useAppState } from "@/lib/app-state";
+import { useMenu } from "@/hooks/useMenu";
+import { useStaff } from "@/hooks/useStaff";
+import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/kitchen")({
@@ -141,11 +143,18 @@ function ticketStatus(t: Ticket): ItemStatus {
   return "placed";
 }
 
+const OUTLET = "SHADAB";
+
 function KitchenDisplay() {
-  const { stockOut, setStockOut, notify } = useAppState();
+  const queryClient = useQueryClient();
+  const { data: menuData } = useMenu(OUTLET, true);
+  const { data: staffData } = useStaff(OUTLET);
   const [tickets, setTickets] = useState<Ticket[]>(INITIAL);
   const [tab, setTab] = useState<"dine-in" | "takeaway">("dine-in");
   const [showStock, setShowStock] = useState(false);
+
+  const menuItems = menuData?.categories.flatMap((c) => c.items) ?? [];
+  const kitchenManager = staffData?.staff.find((s) => s.roles.includes("kitchen-manager"))?.id;
 
   const advanceItem = (ticketId: string, itemIndex: number) =>
     setTickets((prev) => {
@@ -173,8 +182,7 @@ function KitchenDisplay() {
       ),
     );
     const t = tickets.find((x) => x.id === ticketId);
-    if (t) notify(`Takeaway order for ${t.table} is ready for pickup`);
-    toast.success("Order marked ready — counter notified for pickup");
+    if (t) toast.success(`Takeaway order for ${t.table} is ready for pickup`);
   };
 
   const visible = tickets.filter((t) => t.takeaway === (tab === "takeaway"));
@@ -217,8 +225,8 @@ function KitchenDisplay() {
             Item Availability — toggling off disables the item on every ordering screen
           </p>
           <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-            {MENU_ITEMS.map((m) => {
-              const out = stockOut[m.id] ?? m.status !== "available";
+            {menuItems.map((m) => {
+              const out = m.outOfStock || m.status !== "available";
               return (
                 <label key={m.id} className="flex items-center justify-between gap-2 text-sm">
                   <span className={cn("truncate", out && "text-muted-foreground line-through")}>
@@ -226,11 +234,19 @@ function KitchenDisplay() {
                   </span>
                   <Switch
                     checked={!out}
-                    onCheckedChange={(on) => {
-                      setStockOut((prev) => ({ ...prev, [m.id]: !on }));
-                      if (!on) {
-                        notify(`${m.name} marked out of stock`);
-                        toast.success(`${m.name} is now unavailable for new orders`);
+                    disabled={!kitchenManager}
+                    onCheckedChange={async (on) => {
+                      if (!kitchenManager) return;
+                      try {
+                        await api.menuItems.toggleStockOut(m.id, kitchenManager);
+                        await queryClient.invalidateQueries({ queryKey: ["menu"] });
+                        if (!on) {
+                          toast.success(`${m.name} is now unavailable for new orders`);
+                        } else {
+                          toast.success(`${m.name} is back in stock`);
+                        }
+                      } catch (err: any) {
+                        toast.error(err.message ?? "Failed to update stock");
                       }
                     }}
                   />

@@ -151,6 +151,38 @@ export type Reservation = {
   createdAt: string;
 };
 
+export type MenuItem = {
+  id: string;
+  outletId: string;
+  categoryId: string;
+  kitchenId?: string | null;
+  name: string;
+  foodType: "veg" | "non-veg";
+  basePrice: number;
+  favorite: boolean;
+  spicy: boolean;
+  mrp: boolean;
+  status: "available" | "unavailable" | "not-offered" | "disabled";
+  outOfStock?: boolean;
+  variants?: MenuItemVariant[];
+};
+
+export type MenuItemVariant = {
+  id: string;
+  itemId: string;
+  name: string;
+  price: number;
+  available: boolean;
+};
+
+export type MenuCategory = {
+  id: string;
+  outletId: string;
+  name: string;
+  sortOrder: number;
+  items: MenuItem[];
+};
+
 export type CreateReservationInput = {
   outletId: string;
   guestName: string;
@@ -162,6 +194,18 @@ export type CreateReservationInput = {
 };
 
 export const api = {
+  menu: {
+    list: (outlet: string, includeOutOfStock?: boolean) =>
+      get(
+        `/menu?outlet=${encodeURIComponent(outlet)}${includeOutOfStock ? "&includeOutOfStock=true" : ""}`
+      ) as Promise<{ categories: MenuCategory[] }>,
+  },
+  menuItems: {
+    toggleStockOut: (id: string, staffId: string) =>
+      post(`/menu-items/${encodeURIComponent(id)}/stock-out`, { staffId }) as Promise<{
+        outOfStock: boolean;
+      }>,
+  },
   staff: {
     list: (outlet: string) =>
       get(`/staff?outlet=${encodeURIComponent(outlet)}`) as Promise<{ staff: Staff[] }>,

@@ -6,8 +6,13 @@ import * as schema from "../db/schema.ts";
 
 export default async function menuRoutes(app: FastifyInstance) {
   app.get("/menu", async (request, reply) => {
-    const query = request.query as { outletId?: string; outlet?: string };
+    const query = request.query as {
+      outletId?: string;
+      outlet?: string;
+      includeOutOfStock?: string;
+    };
     let outletId = query.outletId ?? query.outlet;
+    const includeOutOfStock = query.includeOutOfStock === "true" || query.includeOutOfStock === "1";
 
     if (!outletId) {
       return reply.status(400).send({ error: "outletId or outlet query param is required" });
@@ -43,7 +48,7 @@ export default async function menuRoutes(app: FastifyInstance) {
       .where(and(eq(schema.stockOuts.outletId, outletId), eq(schema.stockOuts.active, true)));
     const outOfStock = new Set(stockOuts.map((s) => s.menuItemId));
 
-    const visibleItems = items.filter((i) => !outOfStock.has(i.id));
+    const visibleItems = includeOutOfStock ? items : items.filter((i) => !outOfStock.has(i.id));
 
     const variants = visibleItems.length
       ? await db
@@ -62,7 +67,11 @@ export default async function menuRoutes(app: FastifyInstance) {
     const itemsByCategory = new Map<string, any[]>();
     for (const item of visibleItems) {
       const list = itemsByCategory.get(item.categoryId) ?? [];
-      list.push({ ...item, variants: variantsByItem.get(item.id) ?? [] });
+      const enriched = { ...item, variants: variantsByItem.get(item.id) ?? [], outOfStock: outOfStock.has(item.id) };
+      if (!includeOutOfStock) {
+        delete (enriched as any).outOfStock;
+      }
+      list.push(enriched);
       itemsByCategory.set(item.categoryId, list);
     }
 
