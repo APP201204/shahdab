@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
 import { Server } from "socket.io";
 import { config } from "./config.ts";
 import { db } from "./db/index.ts";
@@ -23,8 +24,9 @@ const app = Fastify({ logger: true });
 
 await app.register(cors, { origin: config.frontendUrl, credentials: true });
 await app.register(cookie);
+await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
 
-app.get("/health", async (_request, reply) => {
+app.get("/health", { config: { rateLimit: false } }, async (_request, reply) => {
   return reply.send({ status: "ok", db: Boolean(db) });
 });
 
