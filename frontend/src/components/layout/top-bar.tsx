@@ -1,8 +1,9 @@
-import { Bell, ChevronDown, Wifi, CheckCircle2, UtensilsCrossed } from "lucide-react";
+import { Bell, ChevronDown, Wifi, CheckCircle2, UtensilsCrossed, LogOut } from "lucide-react";
 import { RESTAURANT } from "@/data/seed";
 import { timeOf } from "@/lib/format";
 import { useSections } from "@/hooks/useSections";
 import { useNotifications, useMarkReadNotifications } from "@/hooks/useNotifications";
+import { useAuth, useLogout } from "@/hooks/useAuth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +21,10 @@ export function TopBar() {
   const markRead = useMarkReadNotifications(outletId);
   const notifications = data?.notifications ?? [];
   const unread = notifications.filter((n) => !n.read).length;
+  const { data: auth } = useAuth();
+  const staff = auth?.staff;
+  const logout = useLogout();
+  const initials = staff?.name ? staff.name.slice(0, 2).toUpperCase() : "?";
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-border bg-card px-4">
@@ -109,14 +114,19 @@ export function TopBar() {
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center gap-1 rounded-md px-1 py-1 text-xs font-semibold hover:bg-accent">
             <span className="flex size-7 items-center justify-center rounded-full bg-primary-soft text-primary">
-              SW
+              {initials}
             </span>
             <ChevronDown className="size-3 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Shift summary</DropdownMenuItem>
-            <DropdownMenuItem>Log out</DropdownMenuItem>
+            <DropdownMenuItem disabled>{staff?.name}</DropdownMenuItem>
+            <DropdownMenuItem disabled>{staff?.roles.join(", ")}</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => !logout.isPending && logout.mutate()}
+              className="text-destructive"
+            >
+              <LogOut className="mr-2 size-3.5" /> Log out
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
