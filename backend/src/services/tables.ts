@@ -29,7 +29,7 @@ export async function seatTable({
         .set({ guests })
         .where(eq(schema.tables.id, tableId))
         .returning();
-      const [order] = await tx
+      let [order] = await tx
         .select()
         .from(schema.orders)
         .where(
@@ -40,6 +40,20 @@ export async function seatTable({
         )
         .orderBy(schema.orders.createdAt)
         .limit(1);
+      if (!order && guests > 0) {
+        const [created] = await tx
+          .insert(schema.orders)
+          .values({
+            id: randomUUID(),
+            outletId: updated.outletId,
+            sectionId: updated.sectionId,
+            tableId: updated.id,
+            orderType: "dine-in",
+            status: "open",
+          })
+          .returning();
+        order = created;
+      }
       emitTableUpdate(updated.outletId, updated);
       return { table: updated, order: order ? { id: order.id } : null };
     }
