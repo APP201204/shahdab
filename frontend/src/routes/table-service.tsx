@@ -332,6 +332,13 @@ function TableService() {
 
   const hasActiveOrder = (unitId: string) => (orderMap[unitId]?.lines.length ?? 0) > 0;
 
+  const canAddToUnit = (u: ServiceableUnit | null) => {
+    if (!u) return false;
+    if (u.kind === "group") return hasActiveOrder(u.id);
+    const table = tables.find((t) => t.id === u.id);
+    return !!table && ["available", "reserved", "occupied"].includes(table.status);
+  };
+
   const units = useMemo<ServiceableUnit[]>(() => {
     const activeGroups = mergeGroups.filter((g) => g.status === "active");
     const tableUnits = tables
@@ -556,6 +563,10 @@ function TableService() {
         toast.error("No order found for this unit");
         return;
       }
+      if (!canAddToUnit(selectedUnit)) {
+        toast.error("Cannot add items to this table");
+        return;
+      }
       try {
         const result = await seatTable.mutateAsync({
           id: selectedUnit.id,
@@ -595,6 +606,7 @@ function TableService() {
 
   const openItem = (item: MenuItem) => {
     if (item.status === "unavailable" || item.outOfStock) return;
+    if (!selectedUnit || !canAddToUnit(selectedUnit)) return;
     const first = item.variants?.find((v) => v.available) ?? item.variants?.[0];
     setSelectedItem(item);
     setSelectedVariant(first?.name ?? null);
@@ -927,10 +939,10 @@ function TableService() {
                 <button
                   key={item.id}
                   onClick={() => openItem(item)}
-                  disabled={out || !selectedUnit}
+                  disabled={out || !selectedUnit || !canAddToUnit(selectedUnit)}
                   className={cn(
                     "relative rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-primary hover:bg-primary-soft",
-                    (out || !selectedUnit) &&
+                    (out || !selectedUnit || !canAddToUnit(selectedUnit)) &&
                       "cursor-not-allowed opacity-60 hover:border-border hover:bg-card",
                   )}
                 >
