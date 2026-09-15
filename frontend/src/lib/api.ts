@@ -20,17 +20,21 @@ function get(path: string) {
 }
 
 function post(path: string, body?: unknown) {
-  return fetchApi<unknown>(path, {
+  const init: RequestInit = {
     method: "POST",
     body: body ? JSON.stringify(body) : null,
-  });
+  };
+  if (!body) init.headers = {};
+  return fetchApi<unknown>(path, init);
 }
 
 function put(path: string, body?: unknown) {
-  return fetchApi<unknown>(path, {
+  const init: RequestInit = {
     method: "PUT",
     body: body ? JSON.stringify(body) : null,
-  });
+  };
+  if (!body) init.headers = {};
+  return fetchApi<unknown>(path, init);
 }
 
 export type StaffRole =
