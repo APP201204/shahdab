@@ -1,5 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { db } from "../db/index.ts";
+import * as schema from "../db/schema.ts";
 import * as orders from "../services/orders.ts";
 
 export default async function orderRoutes(app: FastifyInstance) {
@@ -20,8 +23,23 @@ export default async function orderRoutes(app: FastifyInstance) {
     if (!query.outlet) {
       return reply.status(400).send({ error: "outlet is required" });
     }
+
+    let outletId = query.outlet;
+    const uuidCheck = z.string().uuid().safeParse(outletId);
+    if (!uuidCheck.success) {
+      const [outlet] = await db
+        .select()
+        .from(schema.outlets)
+        .where(eq(schema.outlets.name, outletId))
+        .limit(1);
+      if (!outlet) {
+        return reply.status(400).send({ error: "outlet not found" });
+      }
+      outletId = outlet.id;
+    }
+
     try {
-      return await orders.getActiveOrderUnits({ outletId: query.outlet });
+      return await orders.getActiveOrderUnits({ outletId });
     } catch (err: any) {
       return reply.status(500).send({ error: err.message });
     }

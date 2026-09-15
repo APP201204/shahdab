@@ -659,7 +659,7 @@ export async function getTableGroups({ outletId }: { outletId: string }) {
     })),
     splitGroups: splitGroups.map((g) => ({
       ...g,
-      subTableIds: subTablesByGroup.get(g.id) ?? [],
+      subTableIds: (subTablesByGroup.get(g.id) ?? []).filter((id) => id !== g.parentTableId),
     })),
   };
 }

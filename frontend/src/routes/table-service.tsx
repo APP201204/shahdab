@@ -48,7 +48,7 @@ import { useTables } from "@/hooks/useTables";
 import { useTableGroups } from "@/hooks/useTableGroups";
 import { useMenu } from "@/hooks/useMenu";
 import { useSections } from "@/hooks/useSections";
-import { useStaff } from "@/hooks/useStaff";
+import { useAuth } from "@/hooks/useAuth";
 import {
   useOrders,
   useAddOrderItems,
@@ -248,7 +248,7 @@ function TableService() {
   const { data: groupsData } = useTableGroups("SHADAB");
   const { data: menuData } = useMenu("SHADAB");
   const { data: sectionsData } = useSections("SHADAB");
-  const { data: staffData } = useStaff("SHADAB");
+  const { data: auth } = useAuth();
   const { data: ordersData } = useOrders();
 
   const seatTable = useSeatTable();
@@ -679,7 +679,7 @@ function TableService() {
     const hasPending = lines.some((l) => l.status === "pending");
     if (!hasPending) return;
     const orderId = orderMap[selectedUnit.id]?.orderId;
-    const createdBy = staffData?.staff[0]?.id;
+    const createdBy = auth?.staff.staffId;
     if (!orderId || !createdBy) {
       toast.error("Cannot place order");
       return;
