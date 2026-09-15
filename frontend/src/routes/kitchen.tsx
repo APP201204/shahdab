@@ -260,7 +260,7 @@ function KitchenDisplay() {
                         {i.note && <p className="text-[11px] text-warning-foreground">{i.note}</p>}
                       </div>
                     </div>
-                    {i.mine && !t.takeaway && (
+                    {i.mine && (
                       <Button
                         size="sm"
                         className="shrink-0"
