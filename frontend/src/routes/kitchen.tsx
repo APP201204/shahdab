@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Flame, PackageX } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,8 +8,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useMenu } from "@/hooks/useMenu";
 import { useStaff } from "@/hooks/useStaff";
+import { useKitchenTickets, useKitchenItemActions } from "@/hooks/useKitchen";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 export const Route = createFileRoute("/kitchen")({
   head: () => ({
@@ -29,6 +31,7 @@ export const Route = createFileRoute("/kitchen")({
 type ItemStatus = "placed" | "accepted" | "cooking" | "ready";
 
 type TicketItem = {
+  id: string;
   name: string;
   qty: number;
   note?: string;
@@ -38,6 +41,7 @@ type TicketItem = {
 
 type Ticket = {
   id: string;
+  orderId: string;
   kot: string;
   table: string;
   section: string;
@@ -45,67 +49,6 @@ type Ticket = {
   takeaway: boolean;
   items: TicketItem[];
 };
-
-const INITIAL: Ticket[] = [
-  {
-    id: "k1",
-    kot: "KOT-812",
-    table: "Table 1",
-    section: "Dine In",
-    age: "4m",
-    takeaway: false,
-    items: [
-      { name: "Mutton Biryani (Dum)", qty: 2, status: "placed", mine: true },
-      { name: "Rumali Roti", qty: 4, status: "placed", mine: true },
-      { name: "Irani Chai", qty: 2, status: "cooking", mine: false },
-    ],
-  },
-  {
-    id: "k2",
-    kot: "KOT-813",
-    table: "Table 8",
-    section: "Aiwan-e-Khas",
-    age: "9m",
-    takeaway: false,
-    items: [
-      { name: "Boti Kebab", qty: 3, note: "Extra spicy", status: "cooking", mine: true },
-      { name: "Butter Chicken", qty: 2, status: "placed", mine: true },
-    ],
-  },
-  {
-    id: "k3",
-    kot: "KOT-814",
-    table: "Ramesh · 98xxx",
-    section: "AC Takeaway",
-    age: "2m",
-    takeaway: true,
-    items: [{ name: "Chicken Biryani (Family Pack)", qty: 1, status: "cooking", mine: true }],
-  },
-  {
-    id: "k5",
-    kot: "KOT-815",
-    table: "Sana · 97xxx",
-    section: "AK Takeaway",
-    age: "6m",
-    takeaway: true,
-    items: [
-      { name: "Veg Dum Biryani (Regular)", qty: 2, status: "cooking", mine: true },
-      { name: "Irani Chai", qty: 2, status: "ready", mine: true },
-    ],
-  },
-  {
-    id: "k4",
-    kot: "KOT-811",
-    table: "Table 6",
-    section: "Mezzanine",
-    age: "14m",
-    takeaway: false,
-    items: [
-      { name: "Mutton Marag", qty: 4, status: "cooking", mine: true },
-      { name: "Irani Chai", qty: 6, status: "ready", mine: true },
-    ],
-  },
-];
 
 const statusStyle: Record<ItemStatus, string> = {
   placed: "bg-primary-soft text-primary",
@@ -119,13 +62,6 @@ const statusText: Record<ItemStatus, string> = {
   accepted: "Accepted",
   cooking: "Cooking",
   ready: "Ready",
-};
-
-const nextStatus: Record<ItemStatus, ItemStatus> = {
-  placed: "accepted",
-  accepted: "cooking",
-  cooking: "ready",
-  ready: "ready",
 };
 
 const actionLabel: Record<ItemStatus, string> = {
@@ -147,42 +83,53 @@ const OUTLET = "SHADAB";
 
 function KitchenDisplay() {
   const queryClient = useQueryClient();
+  const { data } = useKitchenTickets();
   const { data: menuData } = useMenu(OUTLET, true);
   const { data: staffData } = useStaff(OUTLET);
-  const [tickets, setTickets] = useState<Ticket[]>(INITIAL);
+  const { advance, markAllReady } = useKitchenItemActions();
+
   const [tab, setTab] = useState<"dine-in" | "takeaway">("dine-in");
   const [showStock, setShowStock] = useState(false);
 
   const menuItems = menuData?.categories.flatMap((c) => c.items) ?? [];
   const kitchenManager = staffData?.staff.find((s) => s.roles.includes("kitchen-manager"))?.id;
 
-  const advanceItem = (ticketId: string, itemIndex: number) =>
-    setTickets((prev) => {
-      const updated = prev.map((t) =>
-        t.id === ticketId
-          ? {
-              ...t,
-              items: t.items.map((i, idx) =>
-                idx === itemIndex ? { ...i, status: nextStatus[i.status] } : i,
-              ),
-            }
-          : t,
-      );
-      return updated.filter(
-        (t) => !t.items.filter((i) => i.mine).every((i) => i.status === "ready") || t.takeaway,
-      );
-    });
+  const tickets = useMemo<Ticket[]>(
+    () =>
+      (data?.tickets ?? []).map((t) => ({
+        id: t.id,
+        orderId: t.order.id,
+        kot: `KOT-${t.batchNumber}`,
+        table: t.table?.name ?? t.order.customerName ?? "Takeaway",
+        section: t.section?.name ?? (t.order.orderType === "takeaway" ? "Takeaway" : "Dine In"),
+        age: formatDistanceToNow(new Date(t.createdAt), { addSuffix: true }),
+        takeaway: t.order.orderType === "takeaway",
+        items: t.items.map((i: any) => ({
+          id: i.id,
+          name: i.variant ? `${i.name} (${i.variant})` : i.name,
+          qty: i.qty,
+          note: i.note ?? undefined,
+          status: i.kitchenStatus as ItemStatus,
+          mine: true,
+        })),
+      })),
+    [data],
+  );
 
-  const markAllReady = (ticketId: string) => {
-    setTickets((prev) =>
-      prev.map((t) =>
-        t.id === ticketId
-          ? { ...t, items: t.items.map((i) => (i.mine ? { ...i, status: "ready" } : i)) }
-          : t,
-      ),
-    );
+  const advanceItem = (ticketId: string, itemIndex: number) => {
+    const ticket = tickets.find((t) => t.id === ticketId);
+    if (!ticket) return;
+    const item = ticket.items[itemIndex];
+    if (!item || item.status === "ready") return;
+    advance(item.id, item.status);
+  };
+
+  const handleMarkAllReady = (ticketId: string) => {
     const t = tickets.find((x) => x.id === ticketId);
-    if (t) toast.success(`Takeaway order for ${t.table} is ready for pickup`);
+    if (!t) return;
+    markAllReady.mutate(t.orderId, {
+      onSuccess: () => toast.success(`Takeaway order for ${t.table} is ready for pickup`),
+    });
   };
 
   const visible = tickets.filter((t) => t.takeaway === (tab === "takeaway"));
@@ -290,7 +237,7 @@ function KitchenDisplay() {
               <ul className="space-y-2 text-sm">
                 {t.items.map((i, idx) => (
                   <li
-                    key={i.name + idx}
+                    key={i.id}
                     className={cn(
                       "flex items-center justify-between gap-2 rounded-md border border-border bg-card/50 p-2",
                       !i.mine && "opacity-40",
@@ -327,9 +274,9 @@ function KitchenDisplay() {
                 ))}
               </ul>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">{t.age} ago</span>
+                <span className="text-xs text-muted-foreground">{t.age}</span>
                 {t.takeaway && (
-                  <Button size="sm" disabled={!allActionable} onClick={() => markAllReady(t.id)}>
+                  <Button size="sm" disabled={!allActionable} onClick={() => handleMarkAllReady(t.id)}>
                     Mark All Ready
                   </Button>
                 )}

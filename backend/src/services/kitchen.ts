@@ -46,6 +46,51 @@ export async function getTickets(kitchenId: string) {
   return { tickets: Array.from(byBatch.values()) };
 }
 
+export async function getAllTickets({ outletId }: { outletId: string }) {
+  const items = await db
+    .select({
+      orderItem: schema.orderItems,
+      order: schema.orders,
+      table: schema.tables,
+      section: schema.sections,
+      batch: schema.kotBatches,
+    })
+    .from(schema.orderItems)
+    .innerJoin(schema.orders, eq(schema.orderItems.orderId, schema.orders.id))
+    .innerJoin(schema.kotBatches, eq(schema.orderItems.kotBatchId, schema.kotBatches.id))
+    .leftJoin(schema.tables, eq(schema.orders.tableId, schema.tables.id))
+    .leftJoin(schema.sections, eq(schema.tables.sectionId, schema.sections.id))
+    .where(
+      and(
+        eq(schema.orders.outletId, outletId),
+        notInArray(schema.orderItems.kitchenStatus, ["served", "cancelled"])
+      )
+    )
+    .orderBy(schema.kotBatches.batchNumber, schema.orderItems.id);
+
+  const byBatch = new Map<string, any>();
+  for (const i of items) {
+    const batchId = i.batch.id;
+    if (!byBatch.has(batchId)) {
+      byBatch.set(batchId, {
+        id: i.batch.id,
+        batchNumber: i.batch.batchNumber,
+        createdAt: i.batch.createdAt,
+        order: i.order,
+        table: i.table,
+        section: i.section,
+        items: [],
+      });
+    }
+    byBatch.get(batchId).items.push({
+      ...i.orderItem,
+      table: i.table,
+    });
+  }
+
+  return { tickets: Array.from(byBatch.values()) };
+}
+
 export async function acceptItem({ orderItemId }: { orderItemId: string }) {
   return db.transaction(async (tx) => {
     const [orderItem] = await tx

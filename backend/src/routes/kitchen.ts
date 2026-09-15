@@ -1,7 +1,36 @@
 import { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { db } from "../db/index.ts";
+import * as schema from "../db/schema.ts";
 import * as kitchen from "../services/kitchen.ts";
 
 export default async function kitchenRoutes(app: FastifyInstance) {
+  app.get("/kitchen/tickets", async (request, reply) => {
+    const query = request.query as { outlet?: string };
+    if (!query.outlet) {
+      return reply.status(400).send({ error: "outlet is required" });
+    }
+    let outletId = query.outlet;
+    const uuidCheck = z.string().uuid().safeParse(outletId);
+    if (!uuidCheck.success) {
+      const [outlet] = await db
+        .select()
+        .from(schema.outlets)
+        .where(eq(schema.outlets.name, outletId))
+        .limit(1);
+      if (!outlet) {
+        return reply.status(400).send({ error: "outlet not found" });
+      }
+      outletId = outlet.id;
+    }
+    try {
+      return await kitchen.getAllTickets({ outletId });
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
+  });
+
   app.get("/kitchens/:kitchenId/tickets", async (request, reply) => {
     const { kitchenId } = request.params as { kitchenId: string };
     try {

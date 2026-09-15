@@ -404,6 +404,20 @@ export const api = {
     cancel: (id: string) =>
       post(`/order-items/${encodeURIComponent(id)}/cancel`) as Promise<unknown>,
   },
+  kitchen: {
+    tickets: (outlet: string) =>
+      get(`/kitchen/tickets?outlet=${encodeURIComponent(outlet)}`) as Promise<{
+        tickets: any[];
+      }>,
+    accept: (id: string) =>
+      post(`/order-items/${encodeURIComponent(id)}/accept`) as Promise<unknown>,
+    startCooking: (id: string) =>
+      post(`/order-items/${encodeURIComponent(id)}/start-cooking`) as Promise<unknown>,
+    markReady: (id: string) =>
+      post(`/order-items/${encodeURIComponent(id)}/ready`) as Promise<unknown>,
+    markAllReady: (orderId: string) =>
+      post(`/orders/${encodeURIComponent(orderId)}/takeaway-all-ready`) as Promise<unknown>,
+  },
   notifications: {
     list: (outletId: string) =>
       get(`/notifications?outletId=${encodeURIComponent(outletId)}`) as Promise<{
