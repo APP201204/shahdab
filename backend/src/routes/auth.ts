@@ -15,11 +15,12 @@ export default async function authRoutes(app: FastifyInstance) {
     }
     try {
       const { sessionId, staff } = await createSession(parsed.data);
+      const isProd = process.env.NODE_ENV === "production";
       return reply
         .setCookie("sessionId", sessionId, {
           httpOnly: true,
-          secure: false,
-          sameSite: "lax",
+          secure: isProd,
+          sameSite: isProd ? "none" : "lax",
           path: "/",
         })
         .send({ staff });
