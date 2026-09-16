@@ -102,10 +102,11 @@ export type Bill = {
 };
 
 export type BillingQueueItem = {
-  type: "table" | "merge";
+  type: "table" | "merge" | "takeaway";
   unitId: string;
   unitName: string;
   sectionId: string;
+  sectionName?: string;
   requested: boolean;
   waiter?: string;
   guests: number;
@@ -224,6 +225,7 @@ export type OrderUnit = {
   id: string;
   orderId?: string;
   name: string;
+  orderType?: "dine-in" | "takeaway";
   sectionId?: string | null;
   sectionName?: string;
   waiter?: string;
@@ -399,6 +401,17 @@ export const api = {
       }>,
     sendToKitchen: (orderId: string, createdBy: string) =>
       post(`/orders/${encodeURIComponent(orderId)}/send-to-kitchen`, { createdBy }) as Promise<unknown>,
+    createTakeaway: (body: {
+      sectionId: string;
+      customerName: string;
+      customerPhone: string;
+      items: { menuItemId: string; variantId?: string; qty: number; note?: string }[];
+    }) =>
+      post("/orders/takeaway", body) as Promise<{
+        order: { id: string; status: string };
+      }>,
+    pickup: (orderId: string) =>
+      post(`/orders/${encodeURIComponent(orderId)}/pickup`) as Promise<unknown>,
   },
   orderItems: {
     serve: (id: string) =>

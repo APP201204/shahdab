@@ -1,7 +1,8 @@
 import { eq, and, inArray, notInArray } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
-import { emitKitchenTicket, emitTableUpdate } from "./events.ts";
+import { emitKitchenTicket, emitOrderUpdate, emitTableUpdate } from "./events.ts";
 import * as notifications from "./notifications.ts";
 
 export async function getTickets(kitchenId: string) {
@@ -47,12 +48,14 @@ export async function getTickets(kitchenId: string) {
 }
 
 export async function getAllTickets({ outletId }: { outletId: string }) {
+  const orderSections = alias(schema.sections, "order_sections");
   const items = await db
     .select({
       orderItem: schema.orderItems,
       order: schema.orders,
       table: schema.tables,
       section: schema.sections,
+      orderSection: orderSections,
       batch: schema.kotBatches,
     })
     .from(schema.orderItems)
@@ -60,6 +63,7 @@ export async function getAllTickets({ outletId }: { outletId: string }) {
     .innerJoin(schema.kotBatches, eq(schema.orderItems.kotBatchId, schema.kotBatches.id))
     .leftJoin(schema.tables, eq(schema.orders.tableId, schema.tables.id))
     .leftJoin(schema.sections, eq(schema.tables.sectionId, schema.sections.id))
+    .leftJoin(orderSections, eq(schema.orders.sectionId, orderSections.id))
     .where(
       and(
         eq(schema.orders.outletId, outletId),
@@ -78,7 +82,7 @@ export async function getAllTickets({ outletId }: { outletId: string }) {
         createdAt: i.batch.createdAt,
         order: i.order,
         table: i.table,
-        section: i.section,
+        section: i.section ?? i.orderSection,
         items: [],
       });
     }
@@ -288,6 +292,7 @@ export async function markTakeawayPickedUp({ orderId }: { orderId: string }) {
       .where(eq(schema.orders.id, orderId))
       .returning();
 
+    emitOrderUpdate(order.outletId, { orderId });
     return updated;
   });
 }

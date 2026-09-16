@@ -89,6 +89,7 @@ const dotColor = { veg: "bg-veg", "non-veg": "bg-nonveg", egg: "bg-egg" } as con
 const orderStatusMeta: Record<string, { label: string; className: string }> = {
   pending: { label: "Pending", className: "bg-warning-soft text-warning-foreground" },
   "sent-to-kitchen": { label: "In Kitchen", className: "bg-info-soft text-info" },
+  ready: { label: "Ready", className: "bg-success-soft text-success" },
   "on-table": { label: "On Table", className: "bg-success-soft text-success" },
   cancelled: { label: "Cancelled", className: "bg-muted text-muted-foreground" },
 };

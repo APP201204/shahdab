@@ -8,6 +8,7 @@ export function useOrders() {
   return useQuery({
     queryKey: ACTIVE_KEY,
     queryFn: () => api.orders.active(OUTLET),
+    refetchInterval: 4000,
   });
 }
 
@@ -15,7 +16,11 @@ export function useServeItem() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.orderItems.serve(id),
-    onSuccess: () => client.invalidateQueries({ queryKey: ACTIVE_KEY }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ACTIVE_KEY });
+      client.invalidateQueries({ queryKey: ["kitchen"] });
+      client.invalidateQueries({ queryKey: ["billing"] });
+    },
   });
 }
 
@@ -35,7 +40,35 @@ export function useSendToKitchen() {
   return useMutation({
     mutationFn: ({ orderId, createdBy }: { orderId: string; createdBy: string }) =>
       api.orders.sendToKitchen(orderId, createdBy),
-    onSuccess: () => client.invalidateQueries({ queryKey: ACTIVE_KEY }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ACTIVE_KEY });
+      client.invalidateQueries({ queryKey: ["kitchen"] });
+    },
+  });
+}
+
+export function useCreateTakeawayOrder() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof api.orders.createTakeaway>[0]) =>
+      api.orders.createTakeaway(body),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ACTIVE_KEY });
+      client.invalidateQueries({ queryKey: ["kitchen"] });
+      client.invalidateQueries({ queryKey: ["billing"] });
+    },
+  });
+}
+
+export function usePickupOrder() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => api.orders.pickup(orderId),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ACTIVE_KEY });
+      client.invalidateQueries({ queryKey: ["kitchen"] });
+      client.invalidateQueries({ queryKey: ["billing"] });
+    },
   });
 }
 

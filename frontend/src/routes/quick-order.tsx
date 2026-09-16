@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Plus, Settings, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Settings, Trash2, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,10 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { type OrderLine } from "@/data/seed";
 import { inr } from "@/lib/format";
 import { useMenu } from "@/hooks/useMenu";
 import { useSections } from "@/hooks/useSections";
+import {
+  useOrders,
+  useCreateTakeawayOrder,
+  usePickupOrder,
+} from "@/hooks/useOrders";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/quick-order")({
@@ -38,13 +42,41 @@ export const Route = createFileRoute("/quick-order")({
   component: QuickOrder,
 });
 
+type DraftLine = {
+  key: string;
+  menuItemId: string;
+  variantId?: string;
+  name: string;
+  variant?: string;
+  qty: number;
+  unitPrice: number;
+};
+
 type Draft = {
   id: string;
   label: string;
   customer: string;
   phone: string;
-  lines: OrderLine[];
+  lines: DraftLine[];
   sent: boolean;
+  orderId?: string;
+};
+
+type LiveStatus = "in-kitchen" | "ready" | "completed";
+
+const liveStatusMeta: Record<LiveStatus, { label: string; className: string }> = {
+  "in-kitchen": {
+    label: "In Kitchen",
+    className: "bg-info-soft text-info",
+  },
+  ready: {
+    label: "Ready for Pickup",
+    className: "bg-success-soft text-success",
+  },
+  completed: {
+    label: "Completed",
+    className: "bg-muted text-muted-foreground",
+  },
 };
 
 const OUTLET = "SHADAB";
@@ -52,6 +84,10 @@ const OUTLET = "SHADAB";
 function QuickOrder() {
   const { data: menuData } = useMenu(OUTLET);
   const { data: sectionsData } = useSections(OUTLET);
+  const { data: ordersData } = useOrders();
+  const createTakeaway = useCreateTakeawayOrder();
+  const pickupOrder = usePickupOrder();
+
   const [section, setSection] = useState("");
   const [category, setCategory] = useState("favorites");
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -65,15 +101,41 @@ function QuickOrder() {
     if (!section && defaultSection) {
       setSection(defaultSection);
     }
-  }, [defaultSection]);
+  }, [section, defaultSection]);
+
+  const unitsByOrderId = useMemo(
+    () =>
+      Object.fromEntries(
+        (ordersData?.units ?? [])
+          .filter((u) => u.orderId)
+          .map((u) => [u.orderId!, u]),
+      ),
+    [ordersData],
+  );
 
   const allItems = menuData?.categories.flatMap((c) => c.items) ?? [];
-  const categories = [{ id: "favorites", name: "Favorites" }, ...(menuData?.categories ?? [])];
+  const categories = [
+    { id: "favorites", name: "Favorites" },
+    ...(menuData?.categories ?? []),
+  ];
 
   const draft = drafts.find((d) => d.id === activeDraft) ?? null;
-  const items = allItems.filter((i) =>
-    category === "favorites" ? i.favorite : i.categoryId === category,
-  );
+  const items = allItems
+    .filter((i) => i.status !== "disabled" && i.status !== "not-offered")
+    .filter((i) =>
+      category === "favorites" ? i.favorite : i.categoryId === category,
+    );
+
+  const liveUnit = draft?.orderId ? unitsByOrderId[draft.orderId] : undefined;
+  const liveLines = (liveUnit?.lines ?? []).filter((l) => l.status !== "cancelled");
+  const liveStatus: LiveStatus | null = !draft?.sent
+    ? null
+    : !liveUnit
+      ? "completed"
+      : liveLines.length > 0 &&
+          liveLines.every((l) => l.kitchenStatus === "ready" || l.served)
+        ? "ready"
+        : "in-kitchen";
 
   const newDraft = () => {
     const d: Draft = {
@@ -89,32 +151,91 @@ function QuickOrder() {
   };
 
   const addItem = (itemId: string) => {
-    if (!draft) return;
+    if (!draft || draft.sent) return;
     const item = allItems.find((i) => i.id === itemId);
-    if (!item) return;
-    const variant = item.variants?.[0];
+    if (!item || item.status === "unavailable" || item.outOfStock) return;
+    const variant = item.variants?.find((v) => v.available) ?? item.variants?.[0];
+    const key = `${item.id}-${variant?.id ?? ""}`;
     setDrafts((prev) =>
       prev.map((d) => {
         if (d.id !== draft.id) return d;
-        const key = `${item.id}-${variant?.name ?? ""}`;
-        const existing = d.lines.find((l) => `${l.itemId}-${l.variant ?? ""}` === key);
-        const line: OrderLine = {
-          id: `${key}-${Date.now()}`,
-          itemId: item.id,
+        const existing = d.lines.find((l) => l.key === key);
+        const line: DraftLine = {
+          key,
+          menuItemId: item.id,
+          ...(variant ? { variantId: variant.id, variant: variant.name } : {}),
           name: item.name,
           qty: 1,
           unitPrice: variant ? variant.price : item.basePrice,
-          status: "on-table",
-          ...(variant ? { variant: variant.name } : {}),
         };
         return {
           ...d,
           lines: existing
-            ? d.lines.map((l) => (l === existing ? { ...l, qty: l.qty + 1 } : l))
+            ? d.lines.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l))
             : [...d.lines, line],
         };
       }),
     );
+  };
+
+  const removeLine = (key: string) => {
+    if (!draft || draft.sent) return;
+    setDrafts((prev) =>
+      prev.map((d) =>
+        d.id === draft.id
+          ? { ...d, lines: d.lines.filter((l) => l.key !== key) }
+          : d,
+      ),
+    );
+  };
+
+  const sendToKitchen = () => {
+    if (!draft || draft.sent) return;
+    if (!draft.customer.trim() || !draft.phone.trim()) {
+      toast.error("Enter customer name and phone for the takeaway order");
+      return;
+    }
+    if (!section) {
+      toast.error("Select a counter section first");
+      return;
+    }
+    createTakeaway.mutate(
+      {
+        sectionId: section,
+        customerName: draft.customer.trim(),
+        customerPhone: draft.phone.trim(),
+        items: draft.lines.map((l) => ({
+          menuItemId: l.menuItemId,
+          ...(l.variantId ? { variantId: l.variantId } : {}),
+          qty: l.qty,
+        })),
+      },
+      {
+        onSuccess: (res) => {
+          setDrafts((prev) =>
+            prev.map((d) =>
+              d.id === draft.id ? { ...d, sent: true, orderId: res.order.id } : d,
+            ),
+          );
+          toast.success(`Sent to kitchen — ticket queued for ${draft.customer}`);
+        },
+        onError: (err: any) =>
+          toast.error(err?.message ?? "Could not send order to kitchen"),
+      },
+    );
+  };
+
+  const markPickedUp = () => {
+    if (!draft?.orderId) return;
+    pickupOrder.mutate(draft.orderId, {
+      onSuccess: () => {
+        setDrafts((prev) => prev.filter((d) => d.id !== draft.id));
+        setActiveDraft(null);
+        toast.success("Picked up — hand bill to cashier counter");
+      },
+      onError: (err: any) =>
+        toast.error(err?.message ?? "Could not mark picked up"),
+    });
   };
 
   const total = draft?.lines.reduce((s, l) => s + l.qty * l.unitPrice, 0) ?? 0;
@@ -169,20 +290,41 @@ function QuickOrder() {
             <p className="py-3 text-center text-xs text-muted-foreground">No active orders</p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {drafts.map((d) => (
-                <button
-                  key={d.id}
-                  onClick={() => setActiveDraft(d.id)}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium",
-                    d.id === activeDraft
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border hover:bg-accent",
-                  )}
-                >
-                  {d.customer || d.label} · {d.lines.length}
-                </button>
-              ))}
+              {drafts.map((d) => {
+                const dUnit = d.orderId ? unitsByOrderId[d.orderId] : undefined;
+                const dLines = (dUnit?.lines ?? []).filter(
+                  (l) => l.status !== "cancelled",
+                );
+                const dStatus: LiveStatus | null = !d.sent
+                  ? null
+                  : !dUnit
+                    ? "completed"
+                    : dLines.length > 0 &&
+                        dLines.every(
+                          (l) => l.kitchenStatus === "ready" || l.served,
+                        )
+                      ? "ready"
+                      : "in-kitchen";
+                return (
+                  <button
+                    key={d.id}
+                    onClick={() => setActiveDraft(d.id)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-medium",
+                      d.id === activeDraft
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border hover:bg-accent",
+                    )}
+                  >
+                    {d.customer || d.label} · {d.lines.length}
+                    {dStatus && (
+                      <span className="ml-1 opacity-80">
+                        — {liveStatusMeta[dStatus].label}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
         </Card>
@@ -195,31 +337,42 @@ function QuickOrder() {
           </h2>
           <ScrollArea className="flex-1">
             <div className="grid gap-2 pr-2 sm:grid-cols-2 xl:grid-cols-3">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between rounded-lg border border-border p-3"
-                >
-                  <div>
-                    <p className="text-sm font-medium">
-                      {item.name}
-                      {item.spicy && <span className="ml-1 text-xs">🌶️</span>}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {inr(item.variants?.[0]?.price ?? item.basePrice, false)}
-                    </p>
-                  </div>
-                  <Button
-                    size="icon"
-                    className="size-8 bg-success text-success-foreground hover:bg-success/90"
-                    disabled={!draft}
-                    onClick={() => addItem(item.id)}
-                    aria-label={`Add ${item.name}`}
+              {items.map((item) => {
+                const out = item.status === "unavailable" || !!item.outOfStock;
+                return (
+                  <div
+                    key={item.id}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg border border-border p-3",
+                      out && "opacity-60",
+                    )}
                   >
-                    <Plus className="size-4" />
-                  </Button>
-                </div>
-              ))}
+                    <div>
+                      <p className="text-sm font-medium">
+                        {item.name}
+                        {item.spicy && <span className="ml-1 text-xs">🌶️</span>}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {inr(item.variants?.[0]?.price ?? item.basePrice, false)}
+                      </p>
+                      {out && (
+                        <p className="text-[10px] font-medium text-destructive">
+                          Out of Stock
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      size="icon"
+                      className="size-8 bg-success text-success-foreground hover:bg-success/90"
+                      disabled={!draft || draft.sent || out}
+                      onClick={() => addItem(item.id)}
+                      aria-label={`Add ${item.name}`}
+                    >
+                      <Plus className="size-4" />
+                    </Button>
+                  </div>
+                );
+              })}
             </div>
           </ScrollArea>
         </Card>
@@ -228,7 +381,19 @@ function QuickOrder() {
       <Card className="flex w-[300px] shrink-0 flex-col gap-3 overflow-hidden p-3 shadow-card">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Order Panel</h2>
-          <button className="text-xs font-medium text-primary">Recent Bills</button>
+          <div className="flex items-center gap-2">
+            {liveStatus && (
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                  liveStatusMeta[liveStatus].className,
+                )}
+              >
+                {liveStatusMeta[liveStatus].label}
+              </span>
+            )}
+            <button className="text-xs font-medium text-primary">Recent Bills</button>
+          </div>
         </div>
         {!draft ? (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
@@ -264,7 +429,7 @@ function QuickOrder() {
               <div className="space-y-2 pr-2">
                 {draft.lines.map((l) => (
                   <div
-                    key={l.id}
+                    key={l.key}
                     className="flex items-center justify-between rounded-lg border border-border p-2 text-sm"
                   >
                     <div>
@@ -273,8 +438,19 @@ function QuickOrder() {
                         <p className="text-[11px] text-muted-foreground">{l.variant}</p>
                       )}
                     </div>
-                    <span className="tabular-nums">
-                      {l.qty} × {inr(l.unitPrice, false)}
+                    <span className="flex items-center gap-1">
+                      <span className="tabular-nums">
+                        {l.qty} × {inr(l.unitPrice, false)}
+                      </span>
+                      {!draft.sent && (
+                        <button
+                          onClick={() => removeLine(l.key)}
+                          className="rounded-md p-0.5 text-muted-foreground hover:bg-accent hover:text-destructive"
+                          aria-label={`Remove ${l.name}`}
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      )}
                     </span>
                   </div>
                 ))}
@@ -293,31 +469,30 @@ function QuickOrder() {
               {!draft.sent ? (
                 <Button
                   className="w-full"
-                  disabled={draft.lines.length === 0}
-                  onClick={() => {
-                    if (!draft.customer.trim() || !draft.phone.trim()) {
-                      toast.error("Enter customer name and phone for the takeaway order");
-                      return;
-                    }
-                    setDrafts((prev) =>
-                      prev.map((d) => (d.id === draft.id ? { ...d, sent: true } : d)),
-                    );
-                    toast.success(`Sent to kitchen — ticket queued for ${draft.customer}`);
-                  }}
+                  disabled={draft.lines.length === 0 || createTakeaway.isPending}
+                  onClick={sendToKitchen}
                 >
                   Send to Kitchen
                 </Button>
-              ) : (
+              ) : liveStatus === "completed" ? (
                 <Button
                   className="w-full"
                   variant="outline"
                   onClick={() => {
                     setDrafts((prev) => prev.filter((d) => d.id !== draft.id));
                     setActiveDraft(null);
-                    toast.success(`Picked up — hand bill to cashier counter`);
                   }}
                 >
-                  Mark Picked Up
+                  Clear Completed
+                </Button>
+              ) : (
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  disabled={liveStatus !== "ready" || pickupOrder.isPending}
+                  onClick={markPickedUp}
+                >
+                  {liveStatus === "ready" ? "Mark Picked Up" : "Waiting for kitchen…"}
                 </Button>
               )}
               <Button

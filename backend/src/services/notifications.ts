@@ -27,6 +27,7 @@ export async function createAndNotify({
 
   const io = getSocketServer();
   io?.to(room).emit("notification", notification);
+  io?.to(`outlet:${outletId}`).emit("notification", notification);
 
   return notification;
 }

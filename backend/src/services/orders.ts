@@ -2,7 +2,7 @@ import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
-import { emitKitchenTicket } from "./events.ts";
+import { emitKitchenTicket, emitOrderUpdate, emitTableUpdate } from "./events.ts";
 
 async function updateOrderStatus(orderId: string, tx: any) {
   const items = await tx
@@ -133,7 +133,51 @@ export async function addOrderItems({
 
     await updateOrderStatus(orderId, tx);
     return { order, items: inserted };
+  }).then((result) => {
+    emitOrderUpdate(result.order.outletId, { orderId });
+    return result;
   });
+}
+
+export async function createTakeawayOrder({
+  sectionId,
+  customerName,
+  customerPhone,
+  items,
+  createdBy,
+}: {
+  sectionId: string;
+  customerName: string;
+  customerPhone: string;
+  items: { menuItemId: string; variantId?: string; qty: number; note?: string }[];
+  createdBy: string;
+}) {
+  const [section] = await db
+    .select()
+    .from(schema.sections)
+    .where(eq(schema.sections.id, sectionId));
+  if (!section) throw new Error("section not found");
+  if (section.type !== "takeaway") {
+    throw new Error("orders can only be placed against a takeaway section");
+  }
+
+  const [order] = await db
+    .insert(schema.orders)
+    .values({
+      id: randomUUID(),
+      outletId: section.outletId,
+      sectionId: section.id,
+      customerName,
+      customerPhone,
+      orderType: "takeaway",
+      status: "open",
+    })
+    .returning();
+
+  await addOrderItems({ orderId: order.id, items });
+  const batch = await sendToKitchen({ orderId: order.id, createdBy });
+
+  return { order, batch };
 }
 
 export async function sendToKitchen({
@@ -204,11 +248,21 @@ export async function sendToKitchen({
       byKitchen.set(item.kitchenId ?? "default", list);
     }
 
+    if (order.tableId) {
+      const [table] = await tx
+        .update(schema.tables)
+        .set({ kots: sql`${schema.tables.kots} + 1` })
+        .where(eq(schema.tables.id, order.tableId))
+        .returning();
+      if (table) emitTableUpdate(order.outletId, table);
+    }
+
     for (const [kitchenId, ticketItems] of byKitchen.entries()) {
       emitKitchenTicket(order.outletId, kitchenId, { batch, items: ticketItems });
     }
 
     await updateOrderStatus(orderId, tx);
+    emitOrderUpdate(order.outletId, { orderId });
     return { ...batch, items: cartItems };
   });
 }
@@ -256,6 +310,12 @@ export async function cancelItem({ orderItemId }: { orderItemId: string }) {
       .where(eq(schema.orderItems.id, orderItemId))
       .returning();
     await updateOrderStatus(item.orderId, tx);
+
+    const [order] = await tx
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.id, item.orderId));
+    if (order) emitOrderUpdate(order.outletId, { orderId: item.orderId });
     return updated;
   });
 }
@@ -302,7 +362,11 @@ export async function getActiveOrderUnits({ outletId }: { outletId: string }) {
   ]);
 
   const sectionIds = [
-    ...new Set([...tables.map((t) => t.sectionId), ...groups.map((g) => g.sectionId)]),
+    ...new Set([
+      ...tables.map((t) => t.sectionId),
+      ...groups.map((g) => g.sectionId),
+      ...activeOrders.map((o) => o.sectionId),
+    ]),
   ];
   const sections = sectionIds.length
     ? await db.select().from(schema.sections).where(inArray(schema.sections.id, sectionIds))
@@ -319,13 +383,14 @@ export async function getActiveOrderUnits({ outletId }: { outletId: string }) {
   for (const order of activeOrders) {
     const table = order.tableId ? tableById.get(order.tableId) : undefined;
     const group = order.mergeGroupId ? groupById.get(order.mergeGroupId) : undefined;
-    const name = table?.name ?? group?.name ?? "Unknown";
-    const sectionId = table?.sectionId ?? group?.sectionId;
+    const name = table?.name ?? group?.name ?? order.customerName ?? "Takeaway";
+    const sectionId = table?.sectionId ?? group?.sectionId ?? order.sectionId;
     const waiterId = table?.waiterId ?? group?.waiterId;
     const unit = {
       id: order.mergeGroupId ?? order.tableId ?? order.id,
       orderId: order.id,
       name,
+      orderType: order.orderType,
       sectionId,
       sectionName: sectionId ? (sectionById.get(sectionId) ?? "") : "",
       waiter: waiterId ? staffById.get(waiterId) : undefined,
@@ -337,6 +402,8 @@ export async function getActiveOrderUnits({ outletId }: { outletId: string }) {
         status = "cancelled";
       } else if (item.tableStatus === "on-table" || item.servedAt !== null) {
         status = "on-table";
+      } else if (item.kitchenStatus === "ready") {
+        status = "ready";
       } else if (item.kitchenStatus) {
         status = "sent-to-kitchen";
       }
@@ -371,8 +438,8 @@ export async function serveItem({ orderItemId }: { orderItemId: string }) {
       .for("update");
     if (!item) throw new Error("order item not found");
 
-    if (["served", "cancelled"].includes(item.kitchenStatus ?? "")) {
-      throw new Error("item cannot be served");
+    if (item.kitchenStatus !== "ready") {
+      throw new Error("item is not ready to serve yet");
     }
 
     const [updated] = await tx
@@ -385,6 +452,12 @@ export async function serveItem({ orderItemId }: { orderItemId: string }) {
       .where(eq(schema.orderItems.id, orderItemId))
       .returning();
     await updateOrderStatus(item.orderId, tx);
+
+    const [order] = await tx
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.id, item.orderId));
+    if (order) emitOrderUpdate(order.outletId, { orderId: item.orderId });
     return updated;
   });
 }

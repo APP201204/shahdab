@@ -145,7 +145,8 @@ function Billing() {
       id: u.unitId,
       name: u.unitName,
       sectionId: u.sectionId,
-      sectionName: SECTIONS.find((s) => s.id === u.sectionId)?.name ?? u.sectionId,
+      sectionName:
+        u.sectionName ?? SECTIONS.find((s) => s.id === u.sectionId)?.name ?? u.sectionId,
       requested: u.requested,
       waiter: u.waiter,
       guests: u.guests,

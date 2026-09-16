@@ -37,11 +37,21 @@ const derivedStyle: Record<string, string> = {
   "Fully Served": "bg-success-soft text-success",
 };
 
+const kitchenProgressMeta: Record<string, { label: string; className: string }> = {
+  pending: { label: "Not sent", className: "bg-muted text-muted-foreground" },
+  placed: { label: "Queued", className: "bg-primary-soft text-primary" },
+  accepted: { label: "Queued", className: "bg-primary-soft text-primary" },
+  cooking: { label: "Cooking", className: "bg-warning-soft text-warning-foreground" },
+};
+
 function OrderStatus() {
   const { data } = useOrders();
   const serve = useServeItem();
 
-  const units = useMemo(() => data?.units ?? [], [data]);
+  const units = useMemo(
+    () => (data?.units ?? []).filter((u) => u.orderType !== "takeaway"),
+    [data],
+  );
 
   const markServed = (
     _unitId: string,
@@ -126,7 +136,11 @@ function OrderStatus() {
                           <span className="rounded-full bg-success-soft px-2 py-0.5 text-[11px] font-medium text-success">
                             Served
                           </span>
-                        ) : (
+                        ) : l.status === "cancelled" ? (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            Cancelled
+                          </span>
+                        ) : l.kitchenStatus === "ready" ? (
                           <Button
                             size="sm"
                             variant="outline"
@@ -135,6 +149,17 @@ function OrderStatus() {
                           >
                             Mark Served
                           </Button>
+                        ) : (
+                          <span
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                              kitchenProgressMeta[l.kitchenStatus ?? "pending"]
+                                ?.className ?? "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {kitchenProgressMeta[l.kitchenStatus ?? "pending"]
+                              ?.label ?? "In Kitchen"}
+                          </span>
                         )}
                       </div>
                     ))}

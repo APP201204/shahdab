@@ -76,6 +76,44 @@ export default async function orderRoutes(app: FastifyInstance) {
     }
   );
 
+  const TakeawayBody = z.object({
+    sectionId: z.string().uuid(),
+    customerName: z.string().min(1),
+    customerPhone: z.string().min(1),
+    items: z
+      .array(
+        z.object({
+          menuItemId: z.string().uuid(),
+          variantId: z.string().uuid().optional(),
+          qty: z.number().int().min(1),
+          note: z.string().optional(),
+        })
+      )
+      .min(1),
+  });
+
+  app.post<{ Body: z.infer<typeof TakeawayBody> }>(
+    "/orders/takeaway",
+    async (request, reply) => {
+      const body = TakeawayBody.safeParse(request.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: body.error.message });
+      }
+      const createdBy = request.user?.staffId;
+      if (!createdBy) {
+        return reply.status(401).send({ error: "unauthorized" });
+      }
+      try {
+        return await orders.createTakeawayOrder({
+          ...body.data,
+          createdBy,
+        });
+      } catch (err: any) {
+        return reply.status(409).send({ error: err.message });
+      }
+    }
+  );
+
   const SendToKitchenBody = z.object({
     createdBy: z.string().uuid(),
   });

@@ -2,6 +2,7 @@ import { eq, and, inArray, sql, getTableColumns } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
+import { emitOrderUpdate, emitTableUpdate } from "./events.ts";
 
 export function computeBillTotals(
   lines: { qty: number; unitPrice: number; mrp: boolean; kitchenStatus?: string | null }[],
@@ -77,9 +78,34 @@ export async function getBillQueue({
       )
     );
 
-  const [tables, groups] = await Promise.all([tableQuery, mergeQuery]);
+  const takeawayQuery = db
+    .select({
+      order: schema.orders,
+      section: schema.sections,
+    })
+    .from(schema.orders)
+    .innerJoin(schema.sections, eq(schema.orders.sectionId, schema.sections.id))
+    .where(
+      and(
+        eq(schema.orders.outletId, outletId),
+        eq(schema.orders.orderType, "takeaway"),
+        inArray(schema.orders.status, [
+          "open",
+          "partially-served",
+          "fully-served",
+          "billed",
+        ]),
+        sectionId ? eq(schema.orders.sectionId, sectionId) : undefined
+      )
+    );
 
-  const orderIds = [...tables, ...groups]
+  const [tables, groups, takeawayOrders] = await Promise.all([
+    tableQuery,
+    mergeQuery,
+    takeawayQuery,
+  ]);
+
+  const orderIds = [...tables, ...groups, ...takeawayOrders]
     .map((x) => (x as any).order?.id)
     .filter(Boolean) as string[];
 
@@ -91,6 +117,18 @@ export async function getBillQueue({
   ]);
 
   const staffById = new Map(allStaff.map((s) => [s.id, s.name]));
+
+  const sectionIds = [
+    ...new Set([
+      ...tables.map((t) => t.table.sectionId),
+      ...groups.map((g) => g.group.sectionId),
+    ]),
+  ];
+  const sectionRows = sectionIds.length
+    ? await db.select().from(schema.sections).where(inArray(schema.sections.id, sectionIds))
+    : [];
+  const sectionById = new Map(sectionRows.map((s) => [s.id, s.name]));
+
   const itemsByOrder = new Map<string, any[]>();
   for (const item of items) {
     const list = itemsByOrder.get(item.orderId) ?? [];
@@ -109,6 +147,7 @@ export async function getBillQueue({
         unitId: t.table.id,
         unitName: t.table.name,
         sectionId: t.table.sectionId,
+        sectionName: sectionById.get(t.table.sectionId) ?? "",
         requested: t.table.status === "bill-requested",
         waiter: t.table.waiterId ? staffById.get(t.table.waiterId) : undefined,
         guests: t.table.guests,
@@ -125,6 +164,7 @@ export async function getBillQueue({
         unitId: g.group.id,
         unitName: g.group.name,
         sectionId: g.group.sectionId,
+        sectionName: sectionById.get(g.group.sectionId) ?? "",
         requested: true,
         waiter: g.group.waiterId ? staffById.get(g.group.waiterId) : undefined,
         guests: g.group.guests,
@@ -132,6 +172,24 @@ export async function getBillQueue({
         items: itemsByOrder.get(g.order.id) ?? [],
       });
     }
+  }
+  for (const t of takeawayOrders) {
+    const orderItems = itemsByOrder.get(t.order.id) ?? [];
+    const activeItems = orderItems.filter((i) => i.kitchenStatus !== "cancelled");
+    queue.push({
+      type: "takeaway",
+      unitId: t.order.id,
+      unitName: t.order.customerName ?? "Takeaway",
+      sectionId: t.order.sectionId,
+      sectionName: t.section.name,
+      requested:
+        activeItems.length > 0 &&
+        activeItems.every((i) => ["ready", "served"].includes(i.kitchenStatus ?? "")),
+      guests: 0,
+      startedAt: t.order.createdAt,
+      order: t.order,
+      items: orderItems,
+    });
   }
 
   return { queue };
@@ -250,8 +308,8 @@ export async function closeBill({
       });
     }
 
-    const unitId = order.tableId ?? order.mergeGroupId!;
-    let unitName = "";
+    const unitId = order.tableId ?? order.mergeGroupId ?? order.id;
+    let unitName = order.customerName ?? "";
     if (order.tableId) {
       const [table] = await tx
         .select()
@@ -265,6 +323,7 @@ export async function closeBill({
         .where(eq(schema.tableMergeGroups.id, order.mergeGroupId));
       unitName = group?.name ?? "";
     }
+    if (!unitName) unitName = "Takeaway";
 
     const number = `SH-${String(billNumber).padStart(5, "0")}`;
     const [bill] = await tx
@@ -319,17 +378,22 @@ export async function closeBill({
       .where(eq(schema.orders.id, orderId));
 
     if (order.tableId) {
-      await tx
+      const [table] = await tx
         .update(schema.tables)
         .set({ status: "paid" })
-        .where(eq(schema.tables.id, order.tableId));
+        .where(eq(schema.tables.id, order.tableId))
+        .returning();
+      if (table) emitTableUpdate(order.outletId, table);
     } else if (order.mergeGroupId) {
-      await tx
+      const paidTables = await tx
         .update(schema.tables)
         .set({ status: "paid" })
-        .where(eq(schema.tables.mergeGroupId, order.mergeGroupId));
+        .where(eq(schema.tables.mergeGroupId, order.mergeGroupId))
+        .returning();
+      for (const t of paidTables) emitTableUpdate(order.outletId, t);
     }
 
+    emitOrderUpdate(order.outletId, { orderId });
     return bill;
   });
 }

@@ -13,6 +13,12 @@ export function emitReservationUpdate(outletId: string, reservation: unknown) {
 export function emitKitchenTicket(outletId: string, kitchenId: string, ticket: unknown) {
   const io = getSocketServer();
   io?.to(`outlet:${outletId}:kitchen:${kitchenId}`).emit("kitchen.ticket", ticket);
+  io?.to(`outlet:${outletId}`).emit("kitchen.ticket", ticket);
+}
+
+export function emitOrderUpdate(outletId: string, payload?: unknown) {
+  const io = getSocketServer();
+  io?.to(`outlet:${outletId}`).emit("orders.updated", payload ?? {});
 }
 
 export function emitStockUpdate(outletId: string, payload: { menuItemId: string; variantId?: string | null; outOfStock: boolean }) {
