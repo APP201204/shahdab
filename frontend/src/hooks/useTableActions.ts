@@ -93,8 +93,23 @@ export function useMoveTable() {
 export function useUpdateTable() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: (body: { id: string; number?: number; capacity?: number; name?: string }) =>
+    mutationFn: (body: { id: string; number?: number; capacity?: number; name?: string; waiterId?: string | null }) =>
       api.tables.update(body.id, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCreateTable() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (body: {
+      outletId: string;
+      sectionId: string;
+      number: number;
+      capacity: number;
+      name?: string;
+      waiterId?: string;
+    }) => api.tables.create(body),
     onSuccess: invalidate,
   });
 }

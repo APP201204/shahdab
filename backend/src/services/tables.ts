@@ -24,11 +24,6 @@ export async function seatTable({
 
     if (table.status === "occupied") {
       if (guests < 0) throw new Error("guests cannot be negative");
-      const [updated] = await tx
-        .update(schema.tables)
-        .set({ guests })
-        .where(eq(schema.tables.id, tableId))
-        .returning();
       let [order] = await tx
         .select()
         .from(schema.orders)
@@ -40,6 +35,48 @@ export async function seatTable({
         )
         .orderBy(schema.orders.createdAt)
         .limit(1);
+
+      if (guests === 0) {
+        const hasItems = order
+          ? await tx
+              .select({ id: schema.orderItems.id })
+              .from(schema.orderItems)
+              .where(
+                and(
+                  eq(schema.orderItems.orderId, order.id),
+                  ne(schema.orderItems.tableStatus, "cancelled")
+                )
+              )
+              .limit(1)
+          : [];
+        if (!order || hasItems.length === 0) {
+          if (order) {
+            await tx
+              .update(schema.orders)
+              .set({ status: "closed", closedAt: new Date() })
+              .where(eq(schema.orders.id, order.id));
+          }
+          const [released] = await tx
+            .update(schema.tables)
+            .set({
+              status: "available",
+              guests: 0,
+              waiterId: null,
+              startedAt: null,
+              kots: 0,
+            })
+            .where(eq(schema.tables.id, tableId))
+            .returning();
+          emitTableUpdate(released.outletId, released);
+          return { table: released, order: null };
+        }
+      }
+
+      const [updated] = await tx
+        .update(schema.tables)
+        .set({ guests })
+        .where(eq(schema.tables.id, tableId))
+        .returning();
       if (!order && guests > 0) {
         const [created] = await tx
           .insert(schema.orders)
@@ -61,6 +98,8 @@ export async function seatTable({
     if (!["available", "reserved"].includes(table.status)) {
       throw new Error("table cannot be seated");
     }
+
+    if (guests < 1) throw new Error("at least one guest is required to seat a table");
 
     if (table.status === "reserved") {
       await tx
@@ -225,7 +264,24 @@ export async function mergeTables({
         )
       );
     if (activeOrders.length > 0) {
-      throw new Error("one or more tables has an active order");
+      const orderIds = activeOrders.map((o) => o.id);
+      const items = await tx
+        .select({ orderId: schema.orderItems.orderId })
+        .from(schema.orderItems)
+        .where(
+          and(
+            inArray(schema.orderItems.orderId, orderIds),
+            ne(schema.orderItems.tableStatus, "cancelled")
+          )
+        )
+        .limit(1);
+      if (items.length > 0) {
+        throw new Error("one or more tables has an active order");
+      }
+      await tx
+        .update(schema.orders)
+        .set({ status: "closed" })
+        .where(inArray(schema.orders.id, orderIds));
     }
 
     const sectionId = tables[0].sectionId;
@@ -244,6 +300,10 @@ export async function mergeTables({
         guests: guests ?? 0,
       })
       .returning();
+
+    await tx.insert(schema.tableMergeGroupTables).values(
+      tableIds.map((tableId) => ({ mergeGroupId: group.id, tableId }))
+    );
 
     const updated: any[] = [];
     for (const t of tables) {
@@ -455,19 +515,13 @@ export async function unsplitTable({ splitGroupId }: { splitGroupId: string }) {
       .where(eq(schema.tables.id, group.parentTableId))
       .returning();
 
-    const updated: any[] = [];
-    for (const t of subTables) {
-      const [u] = await tx
-        .update(schema.tables)
-        .set({
-          splitGroupId: null,
-          parentTableId: null,
-          status: "available",
-        })
-        .where(eq(schema.tables.id, t.id))
-        .returning();
-      updated.push(u);
-      emitTableUpdate(parent.outletId, u);
+    const subTableIds = subTables.map((t) => t.id);
+    if (subTableIds.length) {
+      await tx
+        .update(schema.reservations)
+        .set({ tableId: group.parentTableId })
+        .where(inArray(schema.reservations.tableId, subTableIds));
+      await tx.delete(schema.tables).where(inArray(schema.tables.id, subTableIds));
     }
     emitTableUpdate(parent.outletId, parent);
 
@@ -476,7 +530,7 @@ export async function unsplitTable({ splitGroupId }: { splitGroupId: string }) {
       .set({ status: "released" })
       .where(eq(schema.tableSplitGroups.id, splitGroupId));
 
-    return { ...group, status: "released", parent, subTables: updated };
+    return { ...group, status: "released", parent, removedSubTableIds: subTableIds };
   });
 }
 
@@ -498,17 +552,25 @@ export async function moveTableBooking({
     if (!fromTable || !toTable) throw new Error("table not found");
     if (fromTable.outletId !== toTable.outletId) throw new Error("tables must be in the same outlet");
     if (fromTable.mergeGroupId || toTable.mergeGroupId) throw new Error("merged tables cannot be moved");
-    if (fromTable.splitGroupId || fromTable.parentTableId || toTable.splitGroupId || toTable.parentTableId) {
-      throw new Error("split tables cannot be moved");
+    if (toTable.splitGroupId || toTable.parentTableId) {
+      throw new Error("destination cannot be a split table");
+    }
+    if (fromTable.splitGroupId && !fromTable.parentTableId) {
+      throw new Error("a split parent table cannot be moved — move a sub-table instead");
     }
     const activeOrderStatuses: any[] = ["open", "partially-served", "fully-served", "billed"];
-    const [activeOrder] = await tx
+    const activeOrders = await tx
       .select()
       .from(schema.orders)
-      .where(and(eq(schema.orders.tableId, fromTableId), inArray(schema.orders.status, activeOrderStatuses)))
-      .limit(1);
-    if (activeOrder) throw new Error("cannot move a table with an active order");
+      .where(and(eq(schema.orders.tableId, fromTableId), inArray(schema.orders.status, activeOrderStatuses)));
     if (toTable.status !== "available") throw new Error("destination table is not available");
+
+    for (const o of activeOrders) {
+      await tx
+        .update(schema.orders)
+        .set({ tableId: toTableId, mergeGroupId: null })
+        .where(eq(schema.orders.id, o.id));
+    }
 
     const [updatedFrom] = await tx
       .update(schema.tables)
@@ -588,16 +650,65 @@ export async function transferTable({
   });
 }
 
+export async function createTable({
+  outletId,
+  sectionId,
+  number,
+  capacity,
+  name,
+  waiterId,
+}: {
+  outletId: string;
+  sectionId: string;
+  number: number;
+  capacity: number;
+  name?: string;
+  waiterId?: string | null;
+}) {
+  const [section] = await db
+    .select()
+    .from(schema.sections)
+    .where(and(eq(schema.sections.id, sectionId), eq(schema.sections.outletId, outletId)));
+  if (!section) throw new Error("section not found in this outlet");
+  if (section.type !== "dine-in") {
+    throw new Error("tables can only be created in dine-in sections");
+  }
+
+  if (waiterId) {
+    const [waiter] = await db
+      .select()
+      .from(schema.staff)
+      .where(and(eq(schema.staff.id, waiterId), eq(schema.staff.outletId, outletId)));
+    if (!waiter) throw new Error("waiter not found in this outlet");
+  }
+
+  const [created] = await db
+    .insert(schema.tables)
+    .values({
+      outletId,
+      sectionId,
+      number,
+      capacity,
+      name: name ?? `Table ${number}`,
+      waiterId: waiterId ?? null,
+    })
+    .returning();
+  emitTableUpdate(created.outletId, created);
+  return created;
+}
+
 export async function updateTable({
   tableId,
   number,
   capacity,
   name,
+  waiterId,
 }: {
   tableId: string;
   number?: number;
   capacity?: number;
   name?: string;
+  waiterId?: string | null;
 }) {
   const [table] = await db
     .select()
@@ -609,6 +720,16 @@ export async function updateTable({
   if (number !== undefined) updates.number = number;
   if (capacity !== undefined) updates.capacity = capacity;
   if (name !== undefined) updates.name = name;
+  if (waiterId !== undefined) {
+    if (waiterId) {
+      const [waiter] = await db
+        .select()
+        .from(schema.staff)
+        .where(and(eq(schema.staff.id, waiterId), eq(schema.staff.outletId, table.outletId)));
+      if (!waiter) throw new Error("waiter not found in this outlet");
+    }
+    updates.waiterId = waiterId || null;
+  }
 
   if (Object.keys(updates).length === 0) throw new Error("nothing to update");
 
@@ -634,12 +755,18 @@ export async function getTableGroups({ outletId }: { outletId: string }) {
   const allStaff = await db.select().from(schema.staff);
   const staffById = new Map(allStaff.map((s) => [s.id, s.name]));
 
-  const [mergeLinks, splitTables] = await Promise.all([
+  const [mergeLinks, mergedTables, splitTables] = await Promise.all([
     mergeGroups.length
       ? db
           .select()
           .from(schema.tableMergeGroupTables)
           .where(inArray(schema.tableMergeGroupTables.mergeGroupId, mergeGroups.map((g) => g.id)))
+      : Promise.resolve([]),
+    mergeGroups.length
+      ? db
+          .select()
+          .from(schema.tables)
+          .where(inArray(schema.tables.mergeGroupId, mergeGroups.map((g) => g.id)))
       : Promise.resolve([]),
     splitGroups.length
       ? db
@@ -654,6 +781,14 @@ export async function getTableGroups({ outletId }: { outletId: string }) {
     const list = linksByGroup.get(link.mergeGroupId) ?? [];
     list.push(link.tableId);
     linksByGroup.set(link.mergeGroupId, list);
+  }
+  for (const t of mergedTables) {
+    if (!t.mergeGroupId) continue;
+    const list = linksByGroup.get(t.mergeGroupId) ?? [];
+    if (!list.includes(t.id)) {
+      list.push(t.id);
+      linksByGroup.set(t.mergeGroupId, list);
+    }
   }
 
   const subTablesByGroup = new Map<string, string[]>();

@@ -4,6 +4,9 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
 import * as tables from "../services/tables.ts";
+import { requireRole } from "../middleware/auth.ts";
+
+const MANAGE_ROLES = ["admin", "outlet-manager"];
 
 export default async function tableRoutes(app: FastifyInstance) {
   app.get("/tables", async (request, reply) => {
@@ -62,14 +65,44 @@ export default async function tableRoutes(app: FastifyInstance) {
     }
   });
 
+  const CreateTableBody = z.object({
+    outletId: z.string().uuid(),
+    sectionId: z.string().uuid(),
+    number: z.number().int().min(1),
+    capacity: z.number().int().min(1),
+    name: z.string().optional(),
+    waiterId: z.string().uuid().optional().or(z.literal("")),
+  });
+
+  app.post<{ Body: z.infer<typeof CreateTableBody> }>(
+    "/tables",
+    { preHandler: requireRole(MANAGE_ROLES) },
+    async (request, reply) => {
+      const body = CreateTableBody.safeParse(request.body);
+      if (!body.success) {
+        return reply.status(400).send({ error: body.error.message });
+      }
+      try {
+        return await tables.createTable({
+          ...body.data,
+          waiterId: body.data.waiterId === "" ? null : body.data.waiterId,
+        });
+      } catch (err: any) {
+        return reply.status(409).send({ error: err.message });
+      }
+    }
+  );
+
   const UpdateTableBody = z.object({
     number: z.number().int().min(1).optional(),
     capacity: z.number().int().min(1).optional(),
     name: z.string().optional(),
+    waiterId: z.string().uuid().nullable().optional(),
   });
 
   app.put<{ Params: { tableId: string }; Body: z.infer<typeof UpdateTableBody> }>(
     "/tables/:tableId",
+    { preHandler: requireRole(MANAGE_ROLES) },
     async (request, reply) => {
       const body = UpdateTableBody.safeParse(request.body);
       if (!body.success) {

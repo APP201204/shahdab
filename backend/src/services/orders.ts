@@ -304,6 +304,17 @@ export async function cancelItem({ orderItemId }: { orderItemId: string }) {
       throw new Error("item cannot be cancelled");
     }
 
+    if (!item.kitchenStatus) {
+      await tx.delete(schema.orderItems).where(eq(schema.orderItems.id, orderItemId));
+      await updateOrderStatus(item.orderId, tx);
+      const [order] = await tx
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.id, item.orderId));
+      if (order) emitOrderUpdate(order.outletId, { orderId: item.orderId });
+      return { ...item, tableStatus: "cancelled" };
+    }
+
     const [updated] = await tx
       .update(schema.orderItems)
       .set({ tableStatus: "cancelled", kitchenStatus: "cancelled" })

@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useId, useMemo, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   Copy,
+  Eye,
   EyeOff,
   MoreVertical,
   Pencil,
@@ -33,6 +36,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Table,
   TableBody,
   TableCell,
@@ -51,6 +61,9 @@ import {
 import { inr } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { useMenu } from "@/hooks/useMenu";
 
 export const Route = createFileRoute("/menu")({
   head: () => ({
@@ -350,7 +363,18 @@ function ItemForm({
 }
 
 function MenuManagement() {
-  const [categories, setCategories] = useState(INITIAL_CATEGORIES);
+  const queryClient = useQueryClient();
+  const { data: menuData } = useMenu("SHADAB");
+  const apiCategories = useMemo(
+    () => (menuData?.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
+    [menuData],
+  );
+  const apiItemCounts = useMemo(
+    () => Object.fromEntries((menuData?.categories ?? []).map((c) => [c.id, c.items.length])),
+    [menuData],
+  );
+
+  const [categories] = useState(INITIAL_CATEGORIES);
   const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
   const [section, setSection] = useState("all");
   const [query, setQuery] = useState("");
@@ -358,7 +382,8 @@ function MenuManagement() {
   const [categoryFilter, setCategoryFilter] = useState("all");
 
   const [manageOpen, setManageOpen] = useState(false);
-  const [managedCategories, setManagedCategories] = useState(categories);
+  const [managedCategories, setManagedCategories] = useState<{ id: string; name: string }[]>([]);
+  const [savingCategories, setSavingCategories] = useState(false);
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [customizeOpen, setCustomizeOpen] = useState(false);
@@ -368,8 +393,8 @@ function MenuManagement() {
   const [addDraft, setAddDraft] = useState<ItemDraft>(emptyItemDraft);
 
   useEffect(() => {
-    if (manageOpen) setManagedCategories(categories);
-  }, [manageOpen, categories]);
+    if (manageOpen) setManagedCategories(apiCategories);
+  }, [manageOpen, apiCategories]);
 
   const items = useMemo(
     () =>
@@ -408,27 +433,80 @@ function MenuManagement() {
     },
   ];
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     const name = newCategoryName.trim();
     if (!name) {
       toast.error("Category name is required");
       return;
     }
-    if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+    if (apiCategories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
       toast.error("A category with this name already exists");
       return;
     }
-    const id = name.toLowerCase().replace(/\s+/g, "-");
-    setCategories([...categories, { id, name }]);
-    setNewCategoryName("");
-    setAddCategoryOpen(false);
-    toast.success("Category added");
+    try {
+      await api.menuCategories.create({ outlet: "SHADAB", name });
+      await queryClient.invalidateQueries({ queryKey: ["menu"] });
+      setNewCategoryName("");
+      setAddCategoryOpen(false);
+      toast.success("Category added");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not add category");
+    }
   };
 
-  const handleSaveCategories = () => {
-    setCategories(managedCategories);
-    setManageOpen(false);
-    toast.success("Categories updated");
+  const moveCategory = (idx: number, delta: -1 | 1) => {
+    setManagedCategories((prev) => {
+      const target = idx + delta;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      const a = next[idx];
+      const b = next[target];
+      if (!a || !b) return prev;
+      next[idx] = b;
+      next[target] = a;
+      return next;
+    });
+  };
+
+  const handleSaveCategories = async () => {
+    const trimmed = managedCategories.map((c) => ({ ...c, name: c.name.trim() }));
+    if (trimmed.some((c) => !c.name)) {
+      toast.error("Category names cannot be empty");
+      return;
+    }
+    const names = trimmed.map((c) => c.name.toLowerCase());
+    if (new Set(names).size !== names.length) {
+      toast.error("Category names must be unique");
+      return;
+    }
+
+    setSavingCategories(true);
+    try {
+      const keptIds = new Set(trimmed.map((c) => c.id));
+      const removed = apiCategories.filter((c) => !keptIds.has(c.id));
+      for (const c of removed) {
+        await api.menuCategories.remove(c.id);
+      }
+      for (const c of trimmed) {
+        const original = apiCategories.find((a) => a.id === c.id);
+        if (original && original.name !== c.name) {
+          await api.menuCategories.rename(c.id, c.name);
+        }
+      }
+      if (trimmed.length > 0) {
+        await api.menuCategories.reorder({
+          outlet: "SHADAB",
+          categoryIds: trimmed.map((c) => c.id),
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["menu"] });
+      setManageOpen(false);
+      toast.success("Categories updated");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not update categories");
+    } finally {
+      setSavingCategories(false);
+    }
   };
 
   const handleAddItem = () => {
@@ -450,6 +528,50 @@ function MenuManagement() {
     setCustomizeItemId("");
     setCustomizeDraft(emptyItemDraft);
     toast.success(`${parsed.name} updated`);
+  };
+
+  const handleDuplicate = (item: MenuItem) => {
+    const id = `m${Date.now().toString(36)}`;
+    const copy: MenuItem = {
+      ...item,
+      id,
+      name: `${item.name} (Copy)`,
+      variants: item.variants.map((v) => ({ ...v })),
+    };
+    const idx = menuItems.findIndex((i) => i.id === item.id);
+    const next = [...menuItems];
+    next.splice(idx + 1, 0, copy);
+    setMenuItems(next);
+    toast.success(`${item.name} duplicated`);
+  };
+
+  const handleToggleHidden = (item: MenuItem) => {
+    const hidden = item.status !== "available";
+    setMenuItems(
+      menuItems.map((i) =>
+        i.id === item.id ? { ...i, status: hidden ? "available" : "disabled" } : i,
+      ),
+    );
+    toast.success(hidden ? `${item.name} is now available` : `${item.name} hidden from menu`);
+  };
+
+  const handleSetStatus = (item: MenuItem, status: MenuItem["status"]) => {
+    setMenuItems(menuItems.map((i) => (i.id === item.id ? { ...i, status } : i)));
+    toast.success(`${item.name} marked as ${status.replace("-", " ")}`);
+  };
+
+  const handleToggleFavorite = (item: MenuItem) => {
+    setMenuItems(
+      menuItems.map((i) => (i.id === item.id ? { ...i, favorite: !i.favorite } : i)),
+    );
+    toast.success(
+      item.favorite ? `${item.name} removed from favorites` : `${item.name} added to favorites`,
+    );
+  };
+
+  const handleDelete = (item: MenuItem) => {
+    setMenuItems(menuItems.filter((i) => i.id !== item.id));
+    toast.success(`${item.name} deleted`);
   };
 
   const loadItemToCustomize = (itemId: string) => {
@@ -529,7 +651,7 @@ function MenuManagement() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Veg & Non-veg</SelectItem>
+                <SelectItem value="all">All items</SelectItem>
                 <SelectItem value="veg">Veg only</SelectItem>
                 <SelectItem value="non-veg">Non-veg only</SelectItem>
                 <SelectItem value="egg">Egg</SelectItem>
@@ -650,15 +772,75 @@ function MenuManagement() {
                           size="icon"
                           className="size-8"
                           aria-label="Duplicate"
+                          onClick={() => handleDuplicate(item)}
                         >
                           <Copy className="size-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="size-8" aria-label="Hide">
-                          <EyeOff className="size-4" />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          aria-label={item.status === "available" ? "Hide" : "Show"}
+                          onClick={() => handleToggleHidden(item)}
+                        >
+                          {item.status === "available" ? (
+                            <EyeOff className="size-4" />
+                          ) : (
+                            <Eye className="size-4" />
+                          )}
                         </Button>
-                        <Button variant="ghost" size="icon" className="size-8" aria-label="More">
-                          <MoreVertical className="size-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              aria-label="More"
+                            >
+                              <MoreVertical className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setCustomizeOpen(true);
+                                loadItemToCustomize(item.id);
+                              }}
+                            >
+                              <Pencil className="size-4" /> Edit item
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDuplicate(item)}>
+                              <Copy className="size-4" /> Duplicate
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleToggleFavorite(item)}>
+                              <Star className="size-4" />
+                              {item.favorite ? "Remove favorite" : "Mark as favorite"}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleSetStatus(item, "available")}
+                            >
+                              Mark available
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleSetStatus(item, "unavailable")}
+                            >
+                              Mark unavailable (86'd)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleSetStatus(item, "not-offered")}
+                            >
+                              Mark not offered
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => handleDelete(item)}
+                            >
+                              <Trash2 className="size-4" /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -671,14 +853,14 @@ function MenuManagement() {
 
       {/* Manage Categories */}
       <Dialog open={manageOpen} onOpenChange={setManageOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Manage Categories</DialogTitle>
             <DialogDescription>Rename or remove menu categories.</DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
             {managedCategories.map((c, idx) => {
-              const used = menuItems.some((i) => i.categoryId === c.id);
+              const used = (apiItemCounts[c.id] ?? 0) > 0;
               return (
                 <div key={c.id} className="flex items-center gap-2">
                   <Input
@@ -690,6 +872,30 @@ function MenuManagement() {
                     }
                     className="flex-1"
                   />
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      disabled={idx === 0}
+                      onClick={() => moveCategory(idx, -1)}
+                      aria-label="Move up"
+                      title="Move up"
+                    >
+                      <ArrowUp className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      disabled={idx === managedCategories.length - 1}
+                      onClick={() => moveCategory(idx, 1)}
+                      aria-label="Move down"
+                      title="Move down"
+                    >
+                      <ArrowDown className="size-4" />
+                    </Button>
+                  </div>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -709,7 +915,9 @@ function MenuManagement() {
             <Button variant="outline" onClick={() => setManageOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveCategories}>Save Changes</Button>
+            <Button disabled={savingCategories} onClick={handleSaveCategories}>
+              {savingCategories ? "Saving…" : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

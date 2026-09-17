@@ -37,6 +37,10 @@ function put(path: string, body?: unknown) {
   return fetchApi<unknown>(path, init);
 }
 
+function del(path: string) {
+  return fetchApi<unknown>(path, { method: "DELETE" });
+}
+
 export type StaffRole =
   | "captain"
   | "waiter"
@@ -290,6 +294,17 @@ export const api = {
         `/menu?outlet=${encodeURIComponent(outlet)}${includeOutOfStock ? "&includeOutOfStock=true" : ""}`
       ) as Promise<{ categories: MenuCategory[] }>,
   },
+  menuCategories: {
+    create: (input: { outlet: string; name: string }) =>
+      post("/menu/categories", input) as Promise<{ category: MenuCategory }>,
+    reorder: (input: { outlet: string; categoryIds: string[] }) =>
+      put("/menu/categories/reorder", input) as Promise<{ ok: boolean }>,
+    rename: (id: string, name: string) =>
+      put(`/menu/categories/${encodeURIComponent(id)}`, { name }) as Promise<{
+        category: MenuCategory;
+      }>,
+    remove: (id: string) => del(`/menu/categories/${encodeURIComponent(id)}`) as Promise<{ ok: boolean }>,
+  },
   menuItems: {
     toggleStockOut: (id: string, staffId: string) =>
       post(`/menu-items/${encodeURIComponent(id)}/stock-out`, { staffId }) as Promise<{
@@ -343,7 +358,15 @@ export const api = {
   tables: {
     list: (outlet: string) =>
       get(`/tables?outlet=${encodeURIComponent(outlet)}`) as Promise<{ tables: Table[] }>,
-    update: (id: string, body: { number?: number; capacity?: number; name?: string }) =>
+    create: (body: {
+      outletId: string;
+      sectionId: string;
+      number: number;
+      capacity: number;
+      name?: string;
+      waiterId?: string;
+    }) => post("/tables", body) as Promise<Table>,
+    update: (id: string, body: { number?: number; capacity?: number; name?: string; waiterId?: string | null }) =>
       put(`/tables/${encodeURIComponent(id)}`, body) as Promise<Table>,
     groups: (outlet: string) =>
       get(`/tables/groups?outlet=${encodeURIComponent(outlet)}`) as Promise<{

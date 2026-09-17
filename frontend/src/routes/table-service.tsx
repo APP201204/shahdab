@@ -115,10 +115,12 @@ type UnitCardProps = {
   orderCount: number;
   cookingCount: number;
   active: boolean;
+  canOccupy: boolean;
   canMerge: boolean;
   canTransfer: boolean;
   canSplit: boolean;
   onSelect: () => void;
+  onOccupy: () => void;
   onMerge: () => void;
   onTransfer: () => void;
   onSplit: () => void;
@@ -129,10 +131,12 @@ function UnitCard({
   orderCount,
   cookingCount,
   active,
+  canOccupy,
   canMerge,
   canTransfer,
   canSplit,
   onSelect,
+  onOccupy,
   onMerge,
   onTransfer,
   onSplit,
@@ -199,20 +203,21 @@ function UnitCard({
             <DropdownMenuItem onSelect={onSplit} disabled={!canSplit}>
               Split
             </DropdownMenuItem>
-          ) : unit.isSubTable ? (
-            <DropdownMenuItem onSelect={onSplit} disabled={!canSplit}>
-              Unsplit
-            </DropdownMenuItem>
           ) : (
             <>
-              <DropdownMenuItem onSelect={onMerge} disabled={!canMerge}>
-                Merge
+              <DropdownMenuItem onSelect={onOccupy} disabled={!canOccupy}>
+                Occupy
               </DropdownMenuItem>
+              {!unit.isSubTable && (
+                <DropdownMenuItem onSelect={onMerge} disabled={!canMerge}>
+                  Merge
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={onTransfer} disabled={!canTransfer}>
                 Transfer
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={onSplit} disabled={!canSplit}>
-                Split
+                {unit.isSubTable ? "Unsplit" : "Split"}
               </DropdownMenuItem>
             </>
           )}
@@ -224,6 +229,9 @@ function UnitCard({
       </div>
       <p className="text-[11px] text-muted-foreground">{unit.sectionName}</p>
       <div className="mt-1.5 flex items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1" title="Capacity">
+          {unit.capacity} seats
+        </span>
         <span className="inline-flex items-center gap-1" title="Guests">
           <Users className="size-3" /> {unit.guests}
         </span>
@@ -290,7 +298,7 @@ function TableService() {
   const [splitDialog, setSplitDialog] = useState<{
     open: boolean;
     table: Table | null;
-    count: 2 | 3;
+    count: number;
     capacities: number[];
   }>({ open: false, table: null, count: 2, capacities: [0, 0] });
 
@@ -308,8 +316,6 @@ function TableService() {
     () => Object.fromEntries(sections.map((s) => [s.id, s.name])),
     [sections],
   );
-
-  const SUFFIXES = ["a", "b", "c"];
 
   const defaultCapacities = (table: Table, count: number) => {
     const base = Math.floor(table.capacity / count);
@@ -411,11 +417,29 @@ function TableService() {
     );
   };
 
+  const canOccupy = (u: ServiceableUnit) => {
+    if (u.kind !== "table") return false;
+    const table = tables.find((t) => t.id === u.id);
+    return !!table && ["available", "reserved"].includes(table.status);
+  };
+
+  const occupyUnit = (u: ServiceableUnit) => {
+    if (u.kind !== "table") return;
+    seatTable.mutate(
+      { id: u.id, guests: Math.max(1, u.guests || 1) },
+      {
+        onSuccess: () => toast.success(`${u.name} occupied`),
+        onError: (err: any) => toast.error(err?.message ?? "Could not occupy table"),
+      },
+    );
+  };
+
   const canTransfer = (u: ServiceableUnit) => {
     if (u.kind !== "table") return false;
-    if (hasActiveOrder(u.id)) return false;
     const source = tables.find((t) => t.id === u.id);
-    if (!source || source.splitGroupId || source.parentTableId) return false;
+    if (!source) return false;
+    if (source.splitGroupId && !source.parentTableId) return false;
+    if (!u.occupied && !hasActiveOrder(u.id)) return false;
     return tables.some(
       (t) =>
         !t.mergeGroupId &&
@@ -427,7 +451,7 @@ function TableService() {
   };
 
   const openSplitDialog = (table: Table) => {
-    const count: 2 | 3 = 2;
+    const count = 2;
     setSplitDialog({
       open: true,
       table,
@@ -464,7 +488,7 @@ function TableService() {
 
     const subTables = capacities.map((c, i) => ({
       capacity: c,
-      name: `Table ${table.number}${SUFFIXES[i]}`,
+      name: `Table ${table.number}${String.fromCharCode(97 + i)}`,
     }));
 
     splitTable.mutate(
@@ -485,20 +509,6 @@ function TableService() {
     const group = splitGroups.find((g) => g.id === groupId);
     if (!group || group.status !== "active") return;
 
-    const allClear = group.subTableIds.every((id) => {
-      const st = tables.find((t) => t.id === id);
-      if (!st) return false;
-      if (st.guests > 0) return false;
-      if (st.status !== "available") return false;
-      if (hasActiveOrder(id)) return false;
-      return true;
-    });
-
-    if (!allClear) {
-      toast.error("All sub-tables must be vacant with no active orders before unsplitting");
-      return;
-    }
-
     unsplitTable.mutate(groupId, {
       onSuccess: () => {
         if (selectedUnitId && group.subTableIds.includes(selectedUnitId)) {
@@ -515,20 +525,11 @@ function TableService() {
     const table = tables.find((t) => t.id === u.id);
     if (!table) return false;
     if (table.parentTableId) {
-      if (table.suffix !== "a") return false;
       const group = splitGroups.find((g) => g.id === table.splitGroupId);
-      if (!group || group.status !== "active") return false;
-      return group.subTableIds.every((id) => {
-        const st = tables.find((t) => t.id === id);
-        if (!st) return false;
-        if (st.guests > 0) return false;
-        if (st.status !== "available") return false;
-        if (hasActiveOrder(id)) return false;
-        return true;
-      });
+      return !!group && group.status === "active";
     }
     if (table.splitGroupId) return false;
-    return table.capacity >= 2;
+    return table.capacity >= 2 && table.status === "occupied";
   };
 
   const items = useMemo(
@@ -790,17 +791,8 @@ function TableService() {
       toast.error("Merged tables cannot be transferred");
       return;
     }
-    if (
-      sourceTable.splitGroupId ||
-      sourceTable.parentTableId ||
-      dest.splitGroupId ||
-      dest.parentTableId
-    ) {
-      toast.error("Split tables cannot be transferred");
-      return;
-    }
-    if (hasActiveOrder(sourceTable.id)) {
-      toast.error(`${sourceTable.name} has an active order`);
+    if (dest.splitGroupId || dest.parentTableId) {
+      toast.error("Cannot transfer to a split table");
       return;
     }
     if (dest.status !== "available") {
@@ -886,10 +878,12 @@ function TableService() {
                   (orderMap[u.id]?.lines ?? []).filter((l) => l.status === "sent-to-kitchen").length
                 }
                 active={u.id === selectedUnitId}
+                canOccupy={canOccupy(u)}
                 canMerge={canMerge(u)}
                 canTransfer={canTransfer(u)}
                 canSplit={canSplit(u)}
                 onSelect={() => setSelectedUnitId(u.id)}
+                onOccupy={() => occupyUnit(u)}
                 onMerge={() => {
                   setMergeDialog({ open: true, source: u });
                   setMergeTarget("");
@@ -1340,7 +1334,7 @@ function TableService() {
                 <Select
                   value={String(splitDialog.count)}
                   onValueChange={(v) => {
-                    const count = Number(v) as 2 | 3;
+                    const count = Number(v);
                     setSplitDialog((prev) => ({
                       ...prev,
                       count,
@@ -1352,13 +1346,44 @@ function TableService() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="2">2</SelectItem>
-                    {splitDialog.table.capacity >= 3 && <SelectItem value="3">3</SelectItem>}
+                    {Array.from(
+                      { length: Math.max(0, splitDialog.table.capacity - 1) },
+                      (_, i) => i + 2,
+                    ).map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-3">
+                {splitDialog.capacities.slice(0, splitDialog.count).map((cap, idx) => (
+                  <div key={idx} className="space-y-1.5">
+                    <Label htmlFor={`split-cap-${idx}`}>
+                      Sub-table {String.fromCharCode(97 + idx)} capacity
+                    </Label>
+                    <Input
+                      id={`split-cap-${idx}`}
+                      type="number"
+                      min={1}
+                      max={splitDialog.table?.capacity}
+                      value={cap}
+                      onChange={(e) => {
+                        const next = [...splitDialog.capacities];
+                        next[idx] = Number(e.target.value);
+                        setSplitDialog((prev) => ({ ...prev, capacities: next }));
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
               <p className="text-sm text-muted-foreground">
-                Seats will be divided evenly across the sub-tables.
+                Total allocated:{" "}
+                {splitDialog.capacities
+                  .slice(0, splitDialog.count)
+                  .reduce((sum, c) => sum + c, 0)}{" "}
+                / {splitDialog.table.capacity} seats
               </p>
             </div>
           )}

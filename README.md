@@ -14,30 +14,30 @@ shahdab/
 ## Prerequisites
 
 - Node.js 18+ (npm or [bun](https://bun.sh))
-- Docker + Docker Compose (for PostgreSQL), or a local PostgreSQL 16 install
+
+No Docker required — PostgreSQL runs embedded via
+[`embedded-postgres`](https://www.npmjs.com/package/embedded-postgres).
 
 ## Quick start
 
 ### 1. Start PostgreSQL
 
 ```sh
-docker compose up -d db
+cd backend
+npm install
+npm run db:start
 ```
 
-This starts PostgreSQL 16 on `localhost:5432` with database `restaurantos`
-(user `postgres`, password `postgres`).
+This starts an embedded PostgreSQL on `localhost:55432` with database
+`restaurantos` (user `postgres`, password `postgres`). Data is persisted in
+`backend/.pgdata`. Keep this terminal open; press Ctrl+C to stop the DB.
 
 ### 2. Set up the backend
 
-```sh
-cd backend
-npm install
-```
-
-Create `backend/.env`:
+In a second terminal, create `backend/.env`:
 
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/restaurantos
+DATABASE_URL=postgresql://postgres:postgres@localhost:55432/restaurantos
 PORT=4000
 JWT_SECRET=change-this-in-production
 FRONTEND_URL=http://localhost:8080
@@ -46,7 +46,8 @@ FRONTEND_URL=http://localhost:8080
 Run migrations and seed the database:
 
 ```sh
-npm run db:migrate
+cd backend
+npm run db:push
 npm run db:seed
 ```
 
@@ -83,14 +84,11 @@ npm run dev
 
 The app runs at `http://localhost:8080`.
 
-## Alternative: run everything with Docker
+## Alternative: run with Docker
 
-```sh
-docker compose up --build
-```
-
-This starts PostgreSQL and the backend API together. Run the frontend locally
-as described above.
+If you have Docker installed, `docker compose up --build` starts PostgreSQL and
+the backend API together (Postgres on `localhost:5432` — set `DATABASE_URL`
+accordingly). Run the frontend locally as described above.
 
 ## Useful commands
 
@@ -98,6 +96,7 @@ as described above.
 
 | Command              | Description                        |
 | -------------------- | ---------------------------------- |
+| `npm run db:start`   | Start embedded PostgreSQL          |
 | `npm run dev`        | Start dev server (tsx, hot reload) |
 | `npm run build`      | Compile TypeScript                 |
 | `npm run db:generate`| Generate Drizzle migrations        |
@@ -121,7 +120,7 @@ as described above.
 
 | Variable        | Default                                         | Description                     |
 | --------------- | ----------------------------------------------- | ------------------------------- |
-| `DATABASE_URL`  | `postgresql://localhost:5432/restaurantos`      | PostgreSQL connection string    |
+| `DATABASE_URL`  | `postgresql://localhost:55432/restaurantos`     | PostgreSQL connection string    |
 | `PORT`          | `4000`                                          | API port                        |
 | `JWT_SECRET`    | `dev-secret`                                    | Secret for auth tokens          |
 | `FRONTEND_URL`  | `http://localhost:5173`                         | CORS origin for the frontend    |
@@ -139,5 +138,5 @@ as described above.
   it is `8080` for this project, not Vite's usual `5173`).
 - **Login fails**: verify you ran `npm run db:seed`, and log in with a seeded
   staff phone number and password `password`.
-- **DB connection refused**: confirm `docker compose up -d db` is running
-  (`docker compose ps`) and `DATABASE_URL` points at `localhost:5432`.
+- **DB connection refused**: confirm `npm run db:start` is running in its own
+  terminal and `DATABASE_URL` points at `localhost:55432`.

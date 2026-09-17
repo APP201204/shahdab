@@ -80,6 +80,16 @@ const liveStatusMeta: Record<LiveStatus, { label: string; className: string }> =
 };
 
 const OUTLET = "SHADAB";
+const DRAFTS_KEY = "quick-order-drafts";
+
+function loadDrafts(): Draft[] {
+  try {
+    const raw = localStorage.getItem(DRAFTS_KEY);
+    return raw ? (JSON.parse(raw) as Draft[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 function QuickOrder() {
   const { data: menuData } = useMenu(OUTLET);
@@ -90,8 +100,12 @@ function QuickOrder() {
 
   const [section, setSection] = useState("");
   const [category, setCategory] = useState("favorites");
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [drafts, setDrafts] = useState<Draft[]>(loadDrafts);
   const [activeDraft, setActiveDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  }, [drafts]);
 
   const takeawaySections =
     sectionsData?.sections.filter((s) => s.type === "takeaway") ?? [];
@@ -193,6 +207,10 @@ function QuickOrder() {
     if (!draft || draft.sent) return;
     if (!draft.customer.trim() || !draft.phone.trim()) {
       toast.error("Enter customer name and phone for the takeaway order");
+      return;
+    }
+    if (!/^\d{10}$/.test(draft.phone)) {
+      toast.error("Phone number must be exactly 10 digits");
       return;
     }
     if (!section) {
@@ -417,11 +435,14 @@ function QuickOrder() {
                 placeholder="Phone"
                 value={draft.phone}
                 disabled={draft.sent}
-                onChange={(e) =>
+                inputMode="numeric"
+                maxLength={10}
+                onChange={(e) => {
+                  const phone = e.target.value.replace(/\D/g, "").slice(0, 10);
                   setDrafts((prev) =>
-                    prev.map((d) => (d.id === draft.id ? { ...d, phone: e.target.value } : d)),
-                  )
-                }
+                    prev.map((d) => (d.id === draft.id ? { ...d, phone } : d)),
+                  );
+                }}
                 className="h-8 text-xs"
               />
             </div>

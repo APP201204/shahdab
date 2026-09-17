@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { MoreVertical } from "lucide-react";
+import { MoreVertical, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,9 @@ import {
   useUnsplitTable,
   useMoveTable,
   useUpdateTable,
+  useCreateTable,
 } from "@/hooks/useTableActions";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Table, TableMergeGroup, TableSplitGroup } from "@/lib/api";
@@ -78,8 +80,6 @@ const statusLabel: Record<TableStatus, string> = {
   "needs-cleaning": "Needs Cleaning",
 };
 
-const SUFFIXES = ["a", "b", "c"];
-
 const OUTLET = "SHADAB";
 
 function defaultCapacities(table: Table, count: number) {
@@ -111,14 +111,28 @@ function TableManagement() {
   const { data: groupsData } = useTableGroups(OUTLET);
   const { data: sectionsData } = useSections(OUTLET);
   const { data: staffData } = useStaff(OUTLET);
+  const { data: authData } = useAuth();
 
   const tables = tablesData?.tables ?? [];
   const mergeGroups = groupsData?.mergeGroups ?? [];
   const splitGroups = groupsData?.splitGroups ?? [];
   const sections = sectionsData?.sections ?? [];
   const staff = staffData?.staff ?? [];
+  const sessionStaff = authData?.staff;
+  const canManageTables =
+    !!sessionStaff &&
+    (sessionStaff.roles.includes("admin") || sessionStaff.roles.includes("outlet-manager"));
+  const waiters = staff.filter(
+    (s) => s.active && (s.roles.includes("waiter") || s.roles.includes("captain"))
+  );
 
-  const [sectionId, setSectionId] = useState("dine-in");
+  const [sectionId, setSectionId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newTable, setNewTable] = useState<{ number: number; capacity: number; waiterId: string }>({
+    number: 1,
+    capacity: 4,
+    waiterId: "",
+  });
   const [editing, setEditing] = useState<Table | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
   const [selectedForMerge, setSelectedForMerge] = useState<string[]>([]);
@@ -128,11 +142,17 @@ function TableManagement() {
   const [splitDialog, setSplitDialog] = useState<{
     open: boolean;
     table: Table | null;
-    count: 2 | 3;
+    count: number;
     capacities: number[];
   }>({ open: false, table: null, count: 2, capacities: [0, 0] });
 
-  const section = sections.find((s) => s.id === sectionId);
+  const dineInSections = sections.filter((s) => s.type === "dine-in");
+  const effectiveSectionId =
+    sectionId && sections.some((s) => s.id === sectionId)
+      ? sectionId
+      : (dineInSections[0]?.id ?? sections[0]?.id ?? "");
+
+  const section = sections.find((s) => s.id === effectiveSectionId);
   const sectionName = section?.name ?? "";
   const sectionColor = section?.color;
 
@@ -143,9 +163,9 @@ function TableManagement() {
   const isSubTable = (t: Table) => !!t.parentTableId;
 
   const visibleUnits = useMemo<Unit[]>(() => {
-    const activeGroups = mergeGroups.filter((g) => g.status === "active" && g.sectionId === sectionId);
+    const activeGroups = mergeGroups.filter((g) => g.status === "active" && g.sectionId === effectiveSectionId);
     const visibleTables = tables.filter(
-      (t) => t.sectionId === sectionId && !t.mergeGroupId && !isSplitTable(t),
+      (t) => t.sectionId === effectiveSectionId && !t.mergeGroupId && !isSplitTable(t),
     );
     const units: Unit[] = visibleTables.map((t) => ({ kind: "table", table: t }));
     activeGroups.forEach((g) => {
@@ -164,7 +184,7 @@ function TableManagement() {
       return minNumber * 100;
     };
     return units.sort((a, b) => sortKey(a) - sortKey(b));
-  }, [tables, mergeGroups, sectionId, tableById]);
+  }, [tables, mergeGroups, effectiveSectionId, tableById]);
 
   const stats = useMemo(() => {
     const total = visibleUnits.length;
@@ -187,6 +207,7 @@ function TableManagement() {
   const unsplit = useUnsplitTable();
   const move = useMoveTable();
   const updateTable = useUpdateTable();
+  const createTable = useCreateTable();
 
   const setStatus = (id: string, status: TableStatus) => {
     const table = tableById.get(id);
@@ -230,7 +251,7 @@ function TableManagement() {
   };
 
   const openSplitDialog = (table: Table) => {
-    const count: 2 | 3 = 2;
+    const count = 2;
     setSplitDialog({
       open: true,
       table,
@@ -322,21 +343,58 @@ function TableManagement() {
     splitDialog.capacities.slice(0, splitDialog.count).every((c) => c > 0) &&
     splitTotal <= splitDialog.table.capacity;
 
-  const dineInSections = sections.filter((s) => s.type === "dine-in");
-
   const handleUpdateTable = () => {
     if (!editing) return;
     const name = editing.suffix
       ? `Table ${editing.number}${editing.suffix}`
       : `Table ${editing.number}`;
     updateTable.mutate(
-      { id: editing.id, number: editing.number, capacity: editing.capacity, name },
+      {
+        id: editing.id,
+        number: editing.number,
+        capacity: editing.capacity,
+        name,
+        waiterId: editing.waiterId ?? null,
+      },
       {
         onSuccess: () => {
           setEditing(null);
           toast.success("Table updated");
         },
         onError: (err: any) => toast.error(err?.message ?? "Could not update"),
+      }
+    );
+  };
+
+  const handleCreateTable = () => {
+    if (!sessionStaff?.outletId || !effectiveSectionId) {
+      toast.error("Select a section first");
+      return;
+    }
+    if (!newTable.number || newTable.number < 1) {
+      toast.error("Table number must be at least 1");
+      return;
+    }
+    if (!newTable.capacity || newTable.capacity < 1) {
+      toast.error("Capacity must be at least 1");
+      return;
+    }
+    createTable.mutate(
+      {
+        outletId: sessionStaff.outletId,
+        sectionId: effectiveSectionId,
+        number: newTable.number,
+        capacity: newTable.capacity,
+        name: `Table ${newTable.number}`,
+        ...(newTable.waiterId ? { waiterId: newTable.waiterId } : {}),
+      },
+      {
+        onSuccess: () => {
+          setCreateOpen(false);
+          setNewTable({ number: newTable.number + 1, capacity: newTable.capacity, waiterId: "" });
+          toast.success("Table created");
+        },
+        onError: (err: any) => toast.error(err?.message ?? "Could not create table"),
       }
     );
   };
@@ -367,6 +425,19 @@ function TableManagement() {
             </>
           ) : (
             <>
+              {canManageTables && (
+                <Button
+                  onClick={() => {
+                    const nextNumber =
+                      tables.reduce((max, t) => Math.max(max, t.number), 0) + 1;
+                    setNewTable({ number: nextNumber, capacity: 4, waiterId: "" });
+                    setCreateOpen(true);
+                  }}
+                >
+                  <Plus className="size-4" />
+                  Add Table
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setMergeMode(true)}>
                 Merge Tables
               </Button>
@@ -382,7 +453,7 @@ function TableManagement() {
               </Button>
             </>
           )}
-          <Select value={sectionId} onValueChange={setSectionId}>
+          <Select value={effectiveSectionId} onValueChange={setSectionId}>
             <SelectTrigger className="h-9 w-[180px] bg-card">
               <SelectValue />
             </SelectTrigger>
@@ -502,7 +573,7 @@ function TableManagement() {
                     {statusLabel[t.status]}
                   </span>
                 </div>
-                {!mergeMode && (
+                {!mergeMode && canManageTables && (
                   <button
                     onClick={() => setEditing(t)}
                     className="rounded-md p-1 text-muted-foreground hover:bg-accent"
@@ -591,6 +662,69 @@ function TableManagement() {
         })}
       </div>
 
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Table</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Section</Label>
+              <Input value={sectionName} disabled />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cnum">Table Number</Label>
+              <Input
+                id="cnum"
+                type="number"
+                min={1}
+                value={newTable.number}
+                onChange={(e) => setNewTable({ ...newTable, number: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ccap">Number of Seats</Label>
+              <Input
+                id="ccap"
+                type="number"
+                min={1}
+                value={newTable.capacity}
+                onChange={(e) => setNewTable({ ...newTable, capacity: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cwaiter">Assign Waiter</Label>
+              <Select
+                value={newTable.waiterId || "none"}
+                onValueChange={(v) =>
+                  setNewTable({ ...newTable, waiterId: v === "none" ? "" : v })
+                }
+              >
+                <SelectTrigger id="cwaiter">
+                  <SelectValue placeholder="No waiter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No waiter</SelectItem>
+                  {waiters.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateTable} disabled={createTable.isPending}>
+              Create Table
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
@@ -619,14 +753,17 @@ function TableManagement() {
               <div className="space-y-1.5">
                 <Label htmlFor="twaiter">Waiter</Label>
                 <Select
-                  value={editing.waiterId ?? ""}
-                  onValueChange={(v) => setEditing({ ...editing, waiterId: v || null })}
+                  value={editing.waiterId ?? "none"}
+                  onValueChange={(v) =>
+                    setEditing({ ...editing, waiterId: v === "none" ? null : v })
+                  }
                 >
                   <SelectTrigger id="twaiter">
                     <SelectValue placeholder="No waiter" />
                   </SelectTrigger>
                   <SelectContent>
-                    {staff.map((s) => (
+                    <SelectItem value="none">No waiter</SelectItem>
+                    {waiters.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         {s.name}
                       </SelectItem>
@@ -657,7 +794,7 @@ function TableManagement() {
                 <Select
                   value={String(splitDialog.count)}
                   onValueChange={(v) => {
-                    const count = Number(v) as 2 | 3;
+                    const count = Number(v);
                     setSplitDialog((prev) => ({
                       ...prev,
                       count,
@@ -669,15 +806,23 @@ function TableManagement() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="2">2</SelectItem>
-                    <SelectItem value="3">3</SelectItem>
+                    {Array.from(
+                      { length: Math.max(0, splitDialog.table.capacity - 1) },
+                      (_, i) => i + 2,
+                    ).map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-3">
                 {splitDialog.capacities.slice(0, splitDialog.count).map((cap, idx) => (
                   <div key={idx} className="space-y-1.5">
-                    <Label htmlFor={`cap-${idx}`}>Sub-table {SUFFIXES[idx]} capacity</Label>
+                    <Label htmlFor={`cap-${idx}`}>
+                      Sub-table {String.fromCharCode(97 + idx)} capacity
+                    </Label>
                     <Input
                       id={`cap-${idx}`}
                       type="number"

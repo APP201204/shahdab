@@ -22,7 +22,11 @@ import { setAuthHook } from "./middleware/auth.ts";
 
 const app = Fastify({ logger: true });
 
-await app.register(cors, { origin: config.frontendUrl, credentials: true });
+await app.register(cors, {
+  origin: config.frontendUrl,
+  credentials: true,
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+});
 await app.register(cookie);
 await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
 

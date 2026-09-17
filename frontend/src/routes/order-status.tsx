@@ -49,7 +49,10 @@ function OrderStatus() {
   const serve = useServeItem();
 
   const units = useMemo(
-    () => (data?.units ?? []).filter((u) => u.orderType !== "takeaway"),
+    () =>
+      (data?.units ?? []).filter(
+        (u) => u.lines.length > 0,
+      ),
     [data],
   );
 
