@@ -52,9 +52,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  CATEGORIES as INITIAL_CATEGORIES,
-  MENU_ITEMS as INITIAL_MENU_ITEMS,
-  SECTIONS,
   type FoodType,
   type MenuItem,
   type Variant,
@@ -65,6 +62,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useMenu } from "@/hooks/useMenu";
+import { useSections } from "@/hooks/useSections";
 
 export const Route = createFileRoute("/menu")({
   head: () => ({
@@ -119,7 +117,7 @@ const emptyItemDraft: ItemDraft = {
   mrp: false,
   status: "available",
   variants: [],
-  sectionIds: SECTIONS.map((s) => s.id),
+  sectionIds: [],
 };
 
 function toDraft(item: MenuItem): ItemDraft {
@@ -194,10 +192,12 @@ function ItemForm({
   value,
   onChange,
   categories,
+  sections,
 }: {
   value: ItemDraft;
   onChange: (value: ItemDraft) => void;
   categories: { id: string; name: string }[];
+  sections: { id: string; name: string }[];
 }) {
   const id = useId();
   const update = (patch: Partial<ItemDraft>) => onChange({ ...value, ...patch });
@@ -297,7 +297,7 @@ function ItemForm({
       <div className="space-y-1.5">
         <Label>Available in Sections</Label>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {SECTIONS.map((s) => {
+          {sections.map((s) => {
             const checked = value.sectionIds.includes(s.id);
             return (
               <label
@@ -408,7 +408,9 @@ function ItemForm({
 
 function MenuManagement() {
   const queryClient = useQueryClient();
-  const { data: menuData } = useMenu("SHADAB");
+  const { data: menuData } = useMenu("SHADAB", true);
+  const { data: sectionsData } = useSections();
+  const sections = useMemo(() => sectionsData?.sections ?? [], [sectionsData]);
   const apiCategories = useMemo(
     () => (menuData?.categories ?? []).map((c) => ({ id: c.id, name: c.name })),
     [menuData],
@@ -418,8 +420,30 @@ function MenuManagement() {
     [menuData],
   );
 
-  const [categories] = useState(INITIAL_CATEGORIES);
-  const [menuItems, setMenuItems] = useState(INITIAL_MENU_ITEMS);
+  const menuItems: MenuItem[] = useMemo(
+    () =>
+      (menuData?.categories ?? []).flatMap((c) =>
+        c.items.map((i) => ({
+          id: i.id,
+          name: i.name,
+          categoryId: i.categoryId,
+          foodType: i.foodType as FoodType,
+          price: i.basePrice,
+          favorite: i.favorite,
+          spicy: i.spicy,
+          mrp: i.mrp,
+          status: i.status,
+          variants: (i.variants ?? []).map((v) => ({
+            name: v.name,
+            price: v.price,
+            available: v.available,
+          })),
+          sectionIds: i.sectionIds ?? [],
+        })),
+      ),
+    [menuData],
+  );
+  const categories = apiCategories;
   const [section, setSection] = useState("all");
   const [query, setQuery] = useState("");
   const [foodFilter, setFoodFilter] = useState("all");
@@ -554,69 +578,103 @@ function MenuManagement() {
     }
   };
 
-  const handleAddItem = () => {
+  const reloadMenu = () => queryClient.invalidateQueries({ queryKey: ["menu"] });
+
+  const handleAddItem = async () => {
     const parsed = parseItemDraft(addDraft);
     if (!parsed) return;
-    const id = `m${Date.now().toString(36)}`;
-    setMenuItems([...menuItems, { id, ...parsed }]);
-    setAddDraft(emptyItemDraft);
-    setAddItemOpen(false);
-    toast.success(`${parsed.name} added to menu`);
+    try {
+      await api.menuItems.create({ outlet: "SHADAB", ...parsed });
+      await reloadMenu();
+      setAddDraft(emptyItemDraft);
+      setAddItemOpen(false);
+      toast.success(`${parsed.name} added to menu`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not add item");
+    }
   };
 
-  const handleCustomizeSave = () => {
+  const handleCustomizeSave = async () => {
     if (!customizeItemId) return;
     const parsed = parseItemDraft(customizeDraft);
     if (!parsed) return;
-    setMenuItems(menuItems.map((i) => (i.id === customizeItemId ? { ...parsed, id: i.id } : i)));
-    setCustomizeOpen(false);
-    setCustomizeItemId("");
-    setCustomizeDraft(emptyItemDraft);
-    toast.success(`${parsed.name} updated`);
+    try {
+      await api.menuItems.update(customizeItemId, parsed);
+      await reloadMenu();
+      setCustomizeOpen(false);
+      setCustomizeItemId("");
+      setCustomizeDraft(emptyItemDraft);
+      toast.success(`${parsed.name} updated`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not update item");
+    }
   };
 
-  const handleDuplicate = (item: MenuItem) => {
-    const id = `m${Date.now().toString(36)}`;
-    const copy: MenuItem = {
-      ...item,
-      id,
-      name: `${item.name} (Copy)`,
-      variants: item.variants.map((v) => ({ ...v })),
-    };
-    const idx = menuItems.findIndex((i) => i.id === item.id);
-    const next = [...menuItems];
-    next.splice(idx + 1, 0, copy);
-    setMenuItems(next);
-    toast.success(`${item.name} duplicated`);
+  const handleDuplicate = async (item: MenuItem) => {
+    try {
+      await api.menuItems.create({
+        outlet: "SHADAB",
+        name: `${item.name} (Copy)`,
+        categoryId: item.categoryId,
+        foodType: item.foodType,
+        price: item.price,
+        favorite: item.favorite,
+        spicy: item.spicy ?? false,
+        mrp: item.mrp ?? false,
+        status: item.status,
+        variants: item.variants.map((v) => ({ ...v })),
+        sectionIds: item.sectionIds,
+      });
+      await reloadMenu();
+      toast.success(`${item.name} duplicated`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not duplicate item");
+    }
   };
 
-  const handleToggleHidden = (item: MenuItem) => {
+  const handleToggleHidden = async (item: MenuItem) => {
     const hidden = item.status !== "available";
-    setMenuItems(
-      menuItems.map((i) =>
-        i.id === item.id ? { ...i, status: hidden ? "available" : "disabled" } : i,
-      ),
-    );
-    toast.success(hidden ? `${item.name} is now available` : `${item.name} hidden from menu`);
+    try {
+      await api.menuItems.update(item.id, {
+        status: hidden ? "available" : "disabled",
+      });
+      await reloadMenu();
+      toast.success(hidden ? `${item.name} is now available` : `${item.name} hidden from menu`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not update item");
+    }
   };
 
-  const handleSetStatus = (item: MenuItem, status: MenuItem["status"]) => {
-    setMenuItems(menuItems.map((i) => (i.id === item.id ? { ...i, status } : i)));
-    toast.success(`${item.name} marked as ${status.replace("-", " ")}`);
+  const handleSetStatus = async (item: MenuItem, status: MenuItem["status"]) => {
+    try {
+      await api.menuItems.update(item.id, { status });
+      await reloadMenu();
+      toast.success(`${item.name} marked as ${status.replace("-", " ")}`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not update item");
+    }
   };
 
-  const handleToggleFavorite = (item: MenuItem) => {
-    setMenuItems(
-      menuItems.map((i) => (i.id === item.id ? { ...i, favorite: !i.favorite } : i)),
-    );
-    toast.success(
-      item.favorite ? `${item.name} removed from favorites` : `${item.name} added to favorites`,
-    );
+  const handleToggleFavorite = async (item: MenuItem) => {
+    try {
+      await api.menuItems.update(item.id, { favorite: !item.favorite });
+      await reloadMenu();
+      toast.success(
+        item.favorite ? `${item.name} removed from favorites` : `${item.name} added to favorites`,
+      );
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not update item");
+    }
   };
 
-  const handleDelete = (item: MenuItem) => {
-    setMenuItems(menuItems.filter((i) => i.id !== item.id));
-    toast.success(`${item.name} deleted`);
+  const handleDelete = async (item: MenuItem) => {
+    try {
+      await api.menuItems.remove(item.id);
+      await reloadMenu();
+      toast.success(`${item.name} deleted`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Could not delete item");
+    }
   };
 
   const loadItemToCustomize = (itemId: string) => {
@@ -647,7 +705,13 @@ function MenuManagement() {
           <Button variant="outline" size="sm" onClick={() => setCustomizeOpen(true)}>
             Customize
           </Button>
-          <Button size="sm" onClick={() => setAddItemOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setAddDraft({ ...emptyItemDraft, sectionIds: sections.map((s) => s.id) });
+              setAddItemOpen(true);
+            }}
+          >
             <Plus className="size-4" /> Add item
           </Button>
         </div>
@@ -666,7 +730,7 @@ function MenuManagement() {
       <Card className="gap-4 p-4 shadow-card">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap gap-1">
-            {[{ id: "all", name: "All sections" }, ...SECTIONS].map((s) => (
+            {[{ id: "all", name: "All sections" }, ...sections].map((s) => (
               <button
                 key={s.id}
                 onClick={() => setSection(s.id)}
@@ -778,7 +842,7 @@ function MenuManagement() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {SECTIONS.filter((s) => item.sectionIds.includes(s.id)).map((s) => (
+                        {sections.filter((s) => item.sectionIds.includes(s.id)).map((s) => (
                           <span
                             key={s.id}
                             className="rounded-full bg-info-soft px-2 py-0.5 text-[10px] font-medium text-info"
@@ -1047,6 +1111,7 @@ function MenuManagement() {
                   value={customizeDraft}
                   onChange={setCustomizeDraft}
                   categories={categories}
+                  sections={sections}
                 />
               </div>
             )}
@@ -1077,7 +1142,12 @@ function MenuManagement() {
             <DialogDescription>Create a new menu item and its variants.</DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto pr-2">
-            <ItemForm value={addDraft} onChange={setAddDraft} categories={categories} />
+            <ItemForm
+              value={addDraft}
+              onChange={setAddDraft}
+              categories={categories}
+              sections={sections}
+            />
           </div>
           <DialogFooter>
             <Button

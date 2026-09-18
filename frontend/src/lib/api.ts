@@ -251,7 +251,7 @@ export type MenuItem = {
   categoryId: string;
   kitchenId?: string | null;
   name: string;
-  foodType: "veg" | "non-veg";
+  foodType: "veg" | "non-veg" | "egg";
   basePrice: number;
   favorite: boolean;
   spicy: boolean;
@@ -259,6 +259,7 @@ export type MenuItem = {
   status: "available" | "unavailable" | "not-offered" | "disabled";
   outOfStock?: boolean;
   variants?: MenuItemVariant[];
+  sectionIds?: string[];
 };
 
 export type MenuItemVariant = {
@@ -267,6 +268,21 @@ export type MenuItemVariant = {
   name: string;
   price: number;
   available: boolean;
+};
+
+export type MenuItemInput = {
+  outlet?: string;
+  outletId?: string;
+  categoryId: string;
+  name: string;
+  foodType: "veg" | "non-veg" | "egg";
+  price: number;
+  favorite?: boolean;
+  spicy?: boolean;
+  mrp?: boolean;
+  status?: "available" | "unavailable" | "not-offered" | "disabled";
+  variants?: { name: string; price: number; available: boolean }[];
+  sectionIds?: string[];
 };
 
 export type MenuCategory = {
@@ -306,6 +322,12 @@ export const api = {
     remove: (id: string) => del(`/menu/categories/${encodeURIComponent(id)}`) as Promise<{ ok: boolean }>,
   },
   menuItems: {
+    create: (input: MenuItemInput) =>
+      post("/menu/items", input) as Promise<{ item: MenuItem }>,
+    update: (id: string, input: Partial<MenuItemInput>) =>
+      put(`/menu/items/${encodeURIComponent(id)}`, input) as Promise<{ item: MenuItem }>,
+    remove: (id: string) =>
+      del(`/menu/items/${encodeURIComponent(id)}`) as Promise<{ ok: boolean }>,
     toggleStockOut: (id: string, staffId: string) =>
       post(`/menu-items/${encodeURIComponent(id)}/stock-out`, { staffId }) as Promise<{
         outOfStock: boolean;

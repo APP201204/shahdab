@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { eq } from "drizzle-orm";
-import { randomBytes } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import bcrypt from "bcrypt";
 import { db } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
+import { config } from "../config.ts";
 
 export type Session = {
   userId: string;
@@ -21,7 +22,40 @@ declare module "fastify" {
   }
 }
 
-const sessions = new Map<string, Session>();
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const revoked = new Set<string>();
+
+type TokenPayload = Session & { exp: number };
+
+function sign(body: string) {
+  return createHmac("sha256", config.jwtSecret).update(body).digest("base64url");
+}
+
+function encodeToken(payload: TokenPayload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${body}.${sign(body)}`;
+}
+
+function decodeToken(token: string): Session | undefined {
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return undefined;
+  const expected = sign(body);
+  if (
+    sig.length !== expected.length ||
+    !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
+  ) {
+    return undefined;
+  }
+  try {
+    const { exp, ...session } = JSON.parse(
+      Buffer.from(body, "base64url").toString(),
+    ) as TokenPayload;
+    if (!exp || exp < Date.now()) return undefined;
+    return session;
+  } catch {
+    return undefined;
+  }
+}
 
 export async function createSession({
   phone,
@@ -54,7 +88,6 @@ export async function createSession({
     .where(eq(schema.staffRoles.staffId, staff.id));
   const roles = rolesRows.map((r) => r.role);
 
-  const sessionId = randomBytes(32).toString("hex");
   const session: Session = {
     userId: user.id,
     staffId: staff.id,
@@ -64,16 +97,17 @@ export async function createSession({
     name: staff.name,
     phone: user.phone,
   };
-  sessions.set(sessionId, session);
+  const sessionId = encodeToken({ ...session, exp: Date.now() + SESSION_TTL_MS });
   return { sessionId, staff: { ...session } };
 }
 
 export function getSession(sessionId: string | undefined) {
-  return sessionId ? sessions.get(sessionId) : undefined;
+  if (!sessionId || revoked.has(sessionId)) return undefined;
+  return decodeToken(sessionId);
 }
 
 export function destroySession(sessionId: string) {
-  sessions.delete(sessionId);
+  revoked.add(sessionId);
 }
 
 export function setAuthHook(app: FastifyInstance) {

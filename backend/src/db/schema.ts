@@ -229,6 +229,15 @@ export const menuItems = pgTable("menu_items", {
   status: menuItemStatusEnum("status").notNull().default("available"),
 });
 
+export const menuItemSections = pgTable(
+  "menu_item_sections",
+  {
+    itemId: uuid("item_id").notNull().references(() => menuItems.id, { onDelete: "cascade" }),
+    sectionId: uuid("section_id").notNull().references(() => sections.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.sectionId] })]
+);
+
 export const menuItemVariants = pgTable("menu_item_variants", {
   id: uuid("id").primaryKey().defaultRandom(),
   itemId: uuid("item_id").notNull().references(() => menuItems.id, { onDelete: "cascade" }),
