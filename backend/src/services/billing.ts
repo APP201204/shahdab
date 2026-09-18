@@ -141,7 +141,13 @@ export async function getBillQueue({
 
   const queue: any[] = [];
   for (const t of tables) {
-    if (t.table.status === "bill-requested" || (t.order && statusConditions.includes(t.order.status))) {
+    const orderItems = t.order ? (itemsByOrder.get(t.order.id) ?? []) : [];
+    const hasItems = orderItems.some((i) => i.kitchenStatus !== "cancelled");
+    if (
+      hasItems &&
+      (t.table.status === "bill-requested" ||
+        (t.order && statusConditions.includes(t.order.status)))
+    ) {
       queue.push({
         type: "table",
         unitId: t.table.id,
@@ -153,12 +159,14 @@ export async function getBillQueue({
         guests: t.table.guests,
         startedAt: t.table.startedAt,
         order: t.order,
-        items: t.order ? (itemsByOrder.get(t.order.id) ?? []) : [],
+        items: orderItems,
       });
     }
   }
   for (const g of groups) {
-    if (g.order && statusConditions.includes(g.order.status)) {
+    const groupItems = g.order ? (itemsByOrder.get(g.order.id) ?? []) : [];
+    const hasGroupItems = groupItems.some((i) => i.kitchenStatus !== "cancelled");
+    if (hasGroupItems && g.order && statusConditions.includes(g.order.status)) {
       queue.push({
         type: "merge",
         unitId: g.group.id,
@@ -169,13 +177,14 @@ export async function getBillQueue({
         waiter: g.group.waiterId ? staffById.get(g.group.waiterId) : undefined,
         guests: g.group.guests,
         order: g.order,
-        items: itemsByOrder.get(g.order.id) ?? [],
+        items: groupItems,
       });
     }
   }
   for (const t of takeawayOrders) {
     const orderItems = itemsByOrder.get(t.order.id) ?? [];
     const activeItems = orderItems.filter((i) => i.kitchenStatus !== "cancelled");
+    if (activeItems.length === 0) continue;
     queue.push({
       type: "takeaway",
       unitId: t.order.id,

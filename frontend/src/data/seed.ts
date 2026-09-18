@@ -64,6 +64,7 @@ export type MenuItem = {
   mrp?: boolean;
   status: "available" | "unavailable" | "not-offered" | "disabled";
   variants: Variant[];
+  sectionIds: string[];
 };
 
 export type OrderLine = {
@@ -228,7 +229,9 @@ export const CATEGORIES = [
 
 const v = (name: string, price: number, available = true): Variant => ({ name, price, available });
 
-export const MENU_ITEMS: MenuItem[] = [
+const ALL_SECTION_IDS = SECTIONS.map((s) => s.id);
+
+const RAW_MENU_ITEMS: Omit<MenuItem, "sectionIds">[] = [
   {
     id: "m1",
     name: "Mutton Biryani",
@@ -438,6 +441,11 @@ export const MENU_ITEMS: MenuItem[] = [
     variants: [],
   },
 ];
+
+export const MENU_ITEMS: MenuItem[] = RAW_MENU_ITEMS.map((i) => ({
+  ...i,
+  sectionIds: [...ALL_SECTION_IDS],
+}));
 
 const today = new Date();
 const at = (h: number, m: number) =>

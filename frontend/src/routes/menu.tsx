@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
@@ -105,6 +106,7 @@ type ItemDraft = {
   mrp: boolean;
   status: MenuItem["status"];
   variants: VariantDraft[];
+  sectionIds: string[];
 };
 
 const emptyItemDraft: ItemDraft = {
@@ -117,6 +119,7 @@ const emptyItemDraft: ItemDraft = {
   mrp: false,
   status: "available",
   variants: [],
+  sectionIds: SECTIONS.map((s) => s.id),
 };
 
 function toDraft(item: MenuItem): ItemDraft {
@@ -134,6 +137,7 @@ function toDraft(item: MenuItem): ItemDraft {
       price: String(v.price),
       available: v.available,
     })),
+    sectionIds: item.sectionIds,
   };
 }
 
@@ -145,6 +149,10 @@ function parseItemDraft(draft: ItemDraft): Omit<MenuItem, "id"> | null {
   }
   if (!draft.categoryId) {
     toast.error("Please select a category");
+    return null;
+  }
+  if (draft.sectionIds.length === 0) {
+    toast.error("Please select at least one section");
     return null;
   }
   const base = Number(draft.price);
@@ -175,6 +183,7 @@ function parseItemDraft(draft: ItemDraft): Omit<MenuItem, "id"> | null {
     favorite: draft.favorite,
     status: draft.status,
     variants: validVariants,
+    sectionIds: draft.sectionIds,
   };
   if (draft.spicy) parsed.spicy = true;
   if (draft.mrp) parsed.mrp = true;
@@ -201,6 +210,13 @@ function ItemForm({
     onChange({ ...value, variants: [...value.variants, { name: "", price: "", available: true }] });
   const removeVariant = (idx: number) =>
     onChange({ ...value, variants: value.variants.filter((_, i) => i !== idx) });
+  const toggleSection = (sectionId: string, checked: boolean) =>
+    onChange({
+      ...value,
+      sectionIds: checked
+        ? [...value.sectionIds, sectionId]
+        : value.sectionIds.filter((s) => s !== sectionId),
+    });
 
   return (
     <div className="space-y-4">
@@ -276,6 +292,34 @@ function ItemForm({
             <SelectItem value="disabled">Disabled</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Available in Sections</Label>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {SECTIONS.map((s) => {
+            const checked = value.sectionIds.includes(s.id);
+            return (
+              <label
+                key={s.id}
+                htmlFor={`${id}-section-${s.id}`}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
+                  checked
+                    ? "border-primary bg-primary-soft font-medium"
+                    : "border-border hover:bg-accent",
+                )}
+              >
+                <Checkbox
+                  id={`${id}-section-${s.id}`}
+                  checked={checked}
+                  onCheckedChange={(c) => toggleSection(s.id, c === true)}
+                />
+                {s.name}
+              </label>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-4">
@@ -401,8 +445,9 @@ function MenuManagement() {
       menuItems
         .filter((i) => i.name.toLowerCase().includes(query.toLowerCase()))
         .filter((i) => (foodFilter === "all" ? true : i.foodType === foodFilter))
-        .filter((i) => (categoryFilter === "all" ? true : i.categoryId === categoryFilter)),
-    [menuItems, query, foodFilter, categoryFilter],
+        .filter((i) => (categoryFilter === "all" ? true : i.categoryId === categoryFilter))
+        .filter((i) => (section === "all" ? true : i.sectionIds.includes(section))),
+    [menuItems, query, foodFilter, categoryFilter, section],
   );
 
   const stats = [
@@ -679,6 +724,7 @@ function MenuManagement() {
               <TableRow>
                 <TableHead>Item</TableHead>
                 <TableHead>Category</TableHead>
+                <TableHead>Sections</TableHead>
                 <TableHead>Price</TableHead>
                 <TableHead>Variant availability</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -729,6 +775,21 @@ function MenuManagement() {
                       <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                         {categories.find((c) => c.id === item.categoryId)?.name}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {SECTIONS.filter((s) => item.sectionIds.includes(s.id)).map((s) => (
+                          <span
+                            key={s.id}
+                            className="rounded-full bg-info-soft px-2 py-0.5 text-[10px] font-medium text-info"
+                          >
+                            {s.name}
+                          </span>
+                        ))}
+                        {item.sectionIds.length === 0 && (
+                          <span className="text-[11px] text-muted-foreground">—</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-sm tabular-nums">
                       {min === max ? inr(min, false) : `${inr(min, false)}–${inr(max, false)}`}

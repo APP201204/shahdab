@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -68,6 +68,7 @@ const INITIAL: Station[] = [
 ];
 
 function BillingStations() {
+  const navigate = useNavigate();
   const [stations, setStations] = useState<Station[]>(INITIAL);
   const [draft, setDraft] = useState<Station | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -140,7 +141,10 @@ function BillingStations() {
               <Button
                 className="flex-1"
                 size="sm"
-                onClick={() => toast.success(`${station.name} opened`)}
+                onClick={() => {
+                  toast.success(`${station.name} opened`);
+                  navigate({ to: "/billing" });
+                }}
               >
                 Open Station
               </Button>

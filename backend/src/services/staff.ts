@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, asc } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { randomUUID } from "node:crypto";
 import { db } from "../db/index.ts";
@@ -8,7 +8,8 @@ export async function listStaff({ outletId }: { outletId: string }) {
   const rows = await db
     .select()
     .from(schema.staff)
-    .where(eq(schema.staff.outletId, outletId));
+    .where(eq(schema.staff.outletId, outletId))
+    .orderBy(asc(schema.staff.name));
 
   const roles = rows.length
     ? await db

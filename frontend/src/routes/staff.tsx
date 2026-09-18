@@ -66,10 +66,6 @@ function Staff() {
     "Parcel Counter",
     "Main Kitchen",
     ...(sectionsData?.sections.map((s) => s.name) ?? []),
-    "Dine In · T1–T4",
-    "Dine In · T11–T12",
-    "Mezzanine · T5–T7",
-    "Aiwan-e-Khas · T8–T10",
   ];
 
   const outletId = staff[0]?.outletId ?? sectionsData?.sections[0]?.outletId ?? "";
@@ -199,10 +195,13 @@ function Staff() {
               <Switch
                 checked={s.active}
                 onCheckedChange={(on) =>
-                  update.mutate({
-                    id: s.id,
-                    active: on,
-                  })
+                  update.mutate(
+                    { id: s.id, active: on },
+                    {
+                      onError: (err: any) =>
+                        toast.error(err?.message ?? "Failed to update staff"),
+                    },
+                  )
                 }
                 aria-label={`Toggle ${s.name} active`}
               />
